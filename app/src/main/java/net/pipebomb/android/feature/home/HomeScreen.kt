@@ -47,7 +47,7 @@ fun HomeScreen(
 
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = PipeBombTheme.spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.xl),
+        verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap),
     ) {
         item {
             HomeHeader(
@@ -162,6 +162,9 @@ private fun SectionTitle(text: String) {
         text = text,
         style = PipeBombTheme.typography.sectionHeading,
         color = PipeBombTheme.colors.fgPrimary,
+        modifier = Modifier.padding(
+            top = PipeBombTheme.spacing.xl - PipeBombTheme.spacing.listGap,
+        ),
     )
 }
 
