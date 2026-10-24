@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -25,12 +26,17 @@ import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.ui.components.AlbumRow
 import net.pipebomb.android.ui.components.ArtistRow
-import net.pipebomb.android.ui.components.PipeBombTabs
+import net.pipebomb.android.ui.components.PipeBombButton
+import net.pipebomb.android.ui.components.PipeBombButtonVariant
 import net.pipebomb.android.ui.components.PipeBombSpinner
+import net.pipebomb.android.ui.components.PipeBombTabs
 import net.pipebomb.android.ui.components.PlaylistRow
+import net.pipebomb.android.ui.components.TrackChunkErrorRow
 import net.pipebomb.android.ui.components.TrackRow
+import net.pipebomb.android.ui.components.TrackSkeletonRow
 
-private val tabs = listOf("Tracks", "Albums", "Artists", "Playlists", "History")
+private val mainTabs = listOf("Saved", "Playlists", "History")
+private val savedTabs = listOf("Tracks", "Albums", "Artists")
 
 @Composable
 fun LibraryScreen(
@@ -50,100 +56,66 @@ fun LibraryScreen(
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var selectedSavedTab by rememberSaveable { mutableIntStateOf(0) }
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == 2) viewModel.ensureHistoryLoaded()
+    }
 
     Column(
         modifier = modifier.fillMaxSize().padding(PipeBombTheme.spacing.lg),
         verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
     ) {
         PipeBombTabs(
-            options = tabs,
+            options = mainTabs,
             selectedIndex = selectedTab,
             onSelect = { selectedTab = it },
         )
 
         when (selectedTab) {
             0 -> {
-                if (tracks.itemCount == 0 && tracks.loadState.refresh is androidx.paging.LoadState.Loading) {
-                    LoadingBox()
-                } else if (tracks.itemCount == 0) {
-                    EmptyBox("No saved tracks")
-                } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
-                        items(
-                            count = tracks.itemCount,
-                            key = { index -> tracks.peek(index)?.key?.toString() ?: "placeholder-$index" },
-                        ) { index ->
-                            val track = tracks[index]
-                            if (track != null) {
-                                TrackRow(
-                                    track = track,
-                                    isCurrent = track.key.toString() == currentKey,
-                                    isPlaying = isPlaying,
-                                    onClick = {
-                                        onPlay(tracks.itemSnapshotList.items.mapNotNull { it?.key }, index)
-                                    },
-                                    onPlay = {
-                                        onPlay(tracks.itemSnapshotList.items.mapNotNull { it?.key }, index)
-                                    },
-                                    onMore = { onTrackMore(track) },
-                                )
-                            }
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm),
+                ) {
+                    Text(
+                        text = "Tracks, albums, and artists you've saved.",
+                        style = PipeBombTheme.typography.metadata,
+                        color = PipeBombTheme.colors.fgSecondary,
+                        modifier = Modifier.padding(horizontal = PipeBombTheme.spacing.xs),
+                    )
+                    PipeBombTabs(
+                        options = savedTabs,
+                        selectedIndex = selectedSavedTab,
+                        onSelect = { selectedSavedTab = it },
+                    )
+                    Box(Modifier.fillMaxSize()) {
+                        when (selectedSavedTab) {
+                            0 -> SavedTracksTab(
+                                tracks = tracks,
+                                currentKey = currentKey,
+                                isPlaying = isPlaying,
+                                onPlay = onPlay,
+                                onTrackMore = onTrackMore,
+                            )
+
+                            1 -> SavedAlbumsTab(
+                                albums = albums,
+                                onOpenAlbum = onOpenAlbum,
+                            )
+
+                            else -> SavedArtistsTab(
+                                artists = artists,
+                                onOpenArtist = onOpenArtist,
+                            )
                         }
                     }
                 }
             }
 
             1 -> {
-                if (albums.itemCount == 0) {
-                    EmptyBox("No saved albums")
-                } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
-                        items(
-                            count = albums.itemCount,
-                            key = { index -> albums.peek(index)?.let { it.uuid ?: it.identityKey } ?: "placeholder-$index" },
-                        ) { index ->
-                            val album = albums[index]
-                            if (album != null) {
-                                AlbumRow(
-                                    album = album,
-                                    onClick = {
-                                        val id = album.uuid ?: album.identityKey
-                                        if (id != null) onOpenAlbum(id)
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            2 -> {
-                if (artists.itemCount == 0) {
-                    EmptyBox("No saved artists")
-                } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
-                        items(
-                            count = artists.itemCount,
-                            key = { index -> artists.peek(index)?.let { it.uuid ?: it.identityKey } ?: "placeholder-$index" },
-                        ) { index ->
-                            val artist = artists[index]
-                            if (artist != null) {
-                                ArtistRow(
-                                    artist = artist,
-                                    onClick = {
-                                        val id = artist.uuid ?: artist.identityKey
-                                        if (id != null) onOpenArtist(id)
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            3 -> {
                 if (playlists.isEmpty()) {
-                    EmptyBox("No playlists")
+                    EmptyBox("No playlists yet")
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
                         items(playlists, key = { it.uuid }) { playlist ->
@@ -153,23 +125,171 @@ fun LibraryScreen(
                 }
             }
 
-            else -> {
-                if (history.isEmpty()) {
-                    EmptyBox("Nothing played yet")
-                } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
-                        itemsIndexed(
-                            items = history,
-                            key = { _, track -> track.key.toString() },
-                        ) { index, track ->
-                            TrackRow(
-                                track = track,
-                                isCurrent = track.key.toString() == currentKey,
-                                isPlaying = isPlaying,
-                                onClick = { onPlay(history.map { it.key }, index) },
-                                onPlay = { onPlay(history.map { it.key }, index) },
-                                onMore = { onTrackMore(track) },
-                            )
+            else -> HistoryTab(
+                history = history,
+                currentKey = currentKey,
+                isPlaying = isPlaying,
+                onPlay = onPlay,
+                onTrackMore = onTrackMore,
+                onRetry = viewModel::retryHistory,
+                onEnsureChunk = viewModel::ensureHistoryChunk,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SavedTracksTab(
+    tracks: androidx.paging.compose.LazyPagingItems<net.pipebomb.android.core.model.Track>,
+    currentKey: String?,
+    isPlaying: Boolean,
+    onPlay: (List<TrackKey>, Int) -> Unit,
+    onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit,
+) {
+    when {
+        tracks.itemCount == 0 && tracks.loadState.refresh is androidx.paging.LoadState.Loading -> LoadingBox()
+        tracks.itemCount == 0 -> EmptyBox("No saved tracks yet")
+        else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
+            items(
+                count = tracks.itemCount,
+                key = { index -> tracks.peek(index)?.key?.toString() ?: "placeholder-$index" },
+            ) { index ->
+                val track = tracks[index]
+                if (track != null) {
+                    TrackRow(
+                        track = track,
+                        isCurrent = track.key.toString() == currentKey,
+                        isPlaying = isPlaying,
+                        onClick = {
+                            onPlay(tracks.itemSnapshotList.items.mapNotNull { it?.key }, index)
+                        },
+                        onPlay = {},
+                        onMore = { onTrackMore(track) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SavedAlbumsTab(
+    albums: androidx.paging.compose.LazyPagingItems<net.pipebomb.android.core.model.Album>,
+    onOpenAlbum: (String) -> Unit,
+) {
+    when {
+        albums.itemCount == 0 && albums.loadState.refresh is androidx.paging.LoadState.Loading -> LoadingBox()
+        albums.itemCount == 0 -> EmptyBox("No saved albums yet")
+        else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
+            items(
+                count = albums.itemCount,
+                key = { index -> albums.peek(index)?.let { it.uuid ?: it.identityKey } ?: "placeholder-$index" },
+            ) { index ->
+                val album = albums[index]
+                if (album != null) {
+                    AlbumRow(
+                        album = album,
+                        onClick = {
+                            val id = album.uuid ?: album.identityKey
+                            if (id != null) onOpenAlbum(id)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SavedArtistsTab(
+    artists: androidx.paging.compose.LazyPagingItems<net.pipebomb.android.core.model.Artist>,
+    onOpenArtist: (String) -> Unit,
+) {
+    when {
+        artists.itemCount == 0 && artists.loadState.refresh is androidx.paging.LoadState.Loading -> LoadingBox()
+        artists.itemCount == 0 -> EmptyBox("No saved artists yet")
+        else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
+            items(
+                count = artists.itemCount,
+                key = { index -> artists.peek(index)?.let { it.uuid ?: it.identityKey } ?: "placeholder-$index" },
+            ) { index ->
+                val artist = artists[index]
+                if (artist != null) {
+                    ArtistRow(
+                        artist = artist,
+                        onClick = {
+                            val id = artist.uuid ?: artist.identityKey
+                            if (id != null) onOpenArtist(id)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryTab(
+    history: HistoryUiState,
+    currentKey: String?,
+    isPlaying: Boolean,
+    onPlay: (List<TrackKey>, Int) -> Unit,
+    onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit,
+    onRetry: () -> Unit,
+    onEnsureChunk: (Int) -> Unit,
+) {
+    when {
+        history.isLoading -> LoadingBox()
+        history.error != null -> Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = history.error!!,
+                style = PipeBombTheme.typography.bodySecondary,
+                color = PipeBombTheme.colors.error,
+            )
+            PipeBombButton(
+                text = "Retry",
+                onClick = onRetry,
+                variant = PipeBombButtonVariant.Ghost,
+            )
+        }
+
+        history.total == 0 -> EmptyBox("Nothing played yet")
+        else -> Column(Modifier.fillMaxSize()) {
+            Text(
+                text = if (history.total == 1) "1 play" else "${history.total} plays",
+                style = PipeBombTheme.typography.metadata,
+                color = PipeBombTheme.colors.fgSecondary,
+                modifier = Modifier.padding(horizontal = PipeBombTheme.spacing.xs, vertical = PipeBombTheme.spacing.xs),
+            )
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
+                items(
+                    count = history.total,
+                    key = { index -> index },
+                ) { index ->
+                    val track = history.tracksByIndex[index]
+                    if (track != null) {
+                        val loadedKeys = history.tracksByIndex.toSortedMap().values.map { it.key }
+                        val playIndex = loadedKeys.indexOf(track.key).coerceAtLeast(0)
+                        TrackRow(
+                            track = track,
+                            isCurrent = track.key.toString() == currentKey,
+                            isPlaying = isPlaying,
+                            onClick = { onPlay(loadedKeys, playIndex) },
+                            onPlay = {},
+                            onMore = { onTrackMore(track) },
+                        )
+                    } else {
+                        val chunkIndex = index / HISTORY_CHUNK_SIZE
+                        LaunchedEffect(chunkIndex) { onEnsureChunk(chunkIndex) }
+                        val chunkError = history.chunkErrors[chunkIndex]
+                        if (chunkError != null && index % HISTORY_CHUNK_SIZE == 0) {
+                            TrackChunkErrorRow(onRetry = { onEnsureChunk(chunkIndex) })
+                        } else {
+                            TrackSkeletonRow()
                         }
                     }
                 }

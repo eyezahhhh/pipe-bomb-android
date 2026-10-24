@@ -35,6 +35,8 @@ import net.pipebomb.android.ui.components.PipeBombButtonVariant
 import net.pipebomb.android.ui.components.PipeBombSpinner
 import net.pipebomb.android.ui.components.ResourceImage
 import net.pipebomb.android.ui.components.TrackRow
+import net.pipebomb.android.ui.components.TrackChunkErrorRow
+import net.pipebomb.android.ui.components.TrackSkeletonRow
 
 @Composable
 fun PlaylistScreen(
@@ -166,78 +168,14 @@ fun PlaylistScreen(
                         LaunchedEffect(chunkIndex) { viewModel.ensureChunk(chunkIndex) }
                         val chunkError = state.chunkErrors[chunkIndex]
                         if (chunkError != null && index % PLAYLIST_CHUNK_SIZE == 0) {
-                            ChunkErrorRow(onRetry = { viewModel.ensureChunk(chunkIndex) })
+                            TrackChunkErrorRow(onRetry = { viewModel.ensureChunk(chunkIndex) })
                         } else {
-                            TrackRowSkeleton()
+                            TrackSkeletonRow()
                         }
                     }
                 }
                 item { Box(Modifier.padding(bottom = PipeBombTheme.spacing.sm)) }
             }
         }
-    }
-}
-
-@Composable
-private fun TrackRowSkeleton() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .clip(PipeBombTheme.shapes.medium)
-            .background(PipeBombTheme.colors.bgSurface)
-            .padding(horizontal = PipeBombTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
-    ) {
-        Box(
-            Modifier
-                .size(40.dp)
-                .clip(PipeBombTheme.shapes.small)
-                .background(PipeBombTheme.colors.bgElevated),
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.xs)) {
-            Box(
-                Modifier
-                    .width(180.dp)
-                    .height(12.dp)
-                    .clip(PipeBombTheme.shapes.small)
-                    .background(PipeBombTheme.colors.bgElevated),
-            )
-            Box(
-                Modifier
-                    .width(110.dp)
-                    .height(10.dp)
-                    .clip(PipeBombTheme.shapes.small)
-                    .background(PipeBombTheme.colors.bgElevated),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ChunkErrorRow(onRetry: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .clip(PipeBombTheme.shapes.medium)
-            .background(PipeBombTheme.colors.bgSurface)
-            .clickable(onClick = onRetry)
-            .padding(horizontal = PipeBombTheme.spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
-    ) {
-        Text(
-            text = "Couldn't load tracks",
-            style = PipeBombTheme.typography.bodySecondary,
-            color = PipeBombTheme.colors.fgSecondary,
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = "Retry",
-            style = PipeBombTheme.typography.bodySecondary,
-            color = PipeBombTheme.colors.accentPrimary,
-        )
     }
 }
