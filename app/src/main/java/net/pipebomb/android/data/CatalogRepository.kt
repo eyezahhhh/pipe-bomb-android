@@ -115,20 +115,20 @@ class CatalogRepository @Inject constructor(
     suspend fun publicPlaylists(): ApiResult<List<Playlist>> =
         apiCall { apiClientFactory.requireApi().getPublicPlaylists() }
 
-    suspend fun playlist(uuid: String, tracks: Int = 200): ApiResult<Playlist> {
-        val result = apiCall { apiClientFactory.requireApi().getPlaylist(uuid, tracks) }
-        if (result !is ApiResult.Success) return result
-        val playlist = result.value
-        val loaded = playlist.tracks?.size ?: 0
-        val expected = playlist.trackCount ?: loaded
-        if (expected <= loaded) return result
-        return when (val all = allPlaylistTracks(uuid)) {
-            is ApiResult.Failure -> result
-            is ApiResult.Success -> ApiResult.Success(
-                playlist.copy(tracks = all.value, trackCount = all.value.size),
+    suspend fun playlist(uuid: String, tracks: Int = 50): ApiResult<Playlist> =
+        apiCall { apiClientFactory.requireApi().getPlaylist(uuid, tracks) }
+
+    suspend fun playlistTrackPage(
+        uuid: String,
+        offset: Int,
+        amount: Int,
+    ): ApiResult<List<PlaylistTrack>> =
+        apiCall {
+            apiClientFactory.requireApi().getPlaylistTracks(
+                uuid,
+                net.pipebomb.android.core.model.PlaylistTracksQuery(offset = offset, amount = amount),
             )
         }
-    }
 
     suspend fun allPlaylistTracks(uuid: String): ApiResult<List<PlaylistTrack>> =
         apiCall { apiClientFactory.requireApi().getAllPlaylistTracks(uuid) }

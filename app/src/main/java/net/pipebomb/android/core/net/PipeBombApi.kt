@@ -114,6 +114,12 @@ interface PipeBombApi {
         @Query("tracks") tracks: Int = 200,
     ): Playlist
 
+    @POST("playlists/{uuid}")
+    suspend fun getPlaylistTracks(
+        @Path("uuid") uuid: String,
+        @Body body: net.pipebomb.android.core.model.PlaylistTracksQuery,
+    ): List<PlaylistTrack>
+
     @GET("playlists/{uuid}/all")
     suspend fun getAllPlaylistTracks(@Path("uuid") uuid: String): List<PlaylistTrack>
 

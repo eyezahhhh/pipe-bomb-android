@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +30,7 @@ import net.pipebomb.android.ui.components.PipeBombButton
 import net.pipebomb.android.ui.components.PipeBombSpinner
 import net.pipebomb.android.ui.components.ResourceImage
 import net.pipebomb.android.ui.components.TrackRow
+import kotlinx.coroutines.launch
 
 @Composable
 fun PlaylistScreen(
@@ -42,6 +45,7 @@ fun PlaylistScreen(
     LaunchedEffect(playlistUuid) { viewModel.load(playlistUuid) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playlist = state.playlist
+    val scope = rememberCoroutineScope()
 
     when {
         state.isLoading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -107,12 +111,22 @@ fun PlaylistScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm)) {
                         PipeBombButton(
                             text = "Play",
-                            onClick = { onPlay(tracks.map { it.key }, 0) },
+                            onClick = {
+                                scope.launch {
+                                    val all = viewModel.loadAllTracks()
+                                    if (all.isNotEmpty()) onPlay(all.map { it.key }, 0)
+                                }
+                            },
                             enabled = tracks.isNotEmpty(),
                         )
                         PipeBombButton(
                             text = "Shuffle",
-                            onClick = { onPlay(tracks.shuffled().map { it.key }, 0) },
+                            onClick = {
+                                scope.launch {
+                                    val all = viewModel.loadAllTracks().shuffled()
+                                    if (all.isNotEmpty()) onPlay(all.map { it.key }, 0)
+                                }
+                            },
                             variant = net.pipebomb.android.ui.components.PipeBombButtonVariant.Secondary,
                             enabled = tracks.isNotEmpty(),
                         )
@@ -128,8 +142,41 @@ fun PlaylistScreen(
                         onMore = { onTrackMore(track) },
                     )
                 }
+                if (state.canLoadMore || state.isLoadingMore || state.loadMoreError != null) {
+                    item(key = "load-more") {
+                        LoadMoreFooter(
+                            isLoading = state.isLoadingMore,
+                            hasError = state.loadMoreError != null,
+                            onRetry = viewModel::loadMore,
+                            onLoad = viewModel::loadMore,
+                        )
+                    }
+                }
                 item { Box(Modifier.padding(bottom = PipeBombTheme.spacing.sm)) }
             }
+        }
+    }
+}
+
+@Composable
+private fun LoadMoreFooter(
+    isLoading: Boolean,
+    hasError: Boolean,
+    onRetry: () -> Unit,
+    onLoad: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(PipeBombTheme.spacing.lg),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            isLoading -> PipeBombSpinner(size = 24.dp, strokeWidth = 3.dp)
+            hasError -> PipeBombButton(
+                text = "Retry loading tracks",
+                onClick = onRetry,
+                variant = net.pipebomb.android.ui.components.PipeBombButtonVariant.Ghost,
+            )
+            else -> androidx.compose.runtime.LaunchedEffect(Unit) { onLoad() }
         }
     }
 }

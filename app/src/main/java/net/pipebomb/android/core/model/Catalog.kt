@@ -113,6 +113,12 @@ data class PlaylistTrack(
 )
 
 @Serializable
+data class PlaylistTracksQuery(
+    val offset: Int,
+    val amount: Int,
+)
+
+@Serializable
 data class Playlist(
     val uuid: String,
     val owner: PlaylistOwner = PlaylistOwner(),
