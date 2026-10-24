@@ -1,0 +1,90 @@
+# App infrastructure
+
+Read when: changing state holders, persistence, networking/error handling,
+navigation, image loading, or compatibility behaviour. Package layout and data flow
+live in `architecture.md`.
+
+## State
+
+- One ViewModel per destination, exposing `StateFlow<UiState>`.
+- UI state is immutable; actions are explicit methods or a sealed `Event` type.
+- One-off effects (snackbar, navigation) use a `Channel`, not state.
+- Compose collects with `collectAsStateWithLifecycle`.
+- Queue, shuffle, repeat, and now-playing state live in the playback layer, not in
+  a screen ViewModel, so background playback and process recreation behave correctly.
+- Keep metadata in memory for 10 minutes, mirroring the web client's `staleTime`.
+  Do not keep a second unbounded cache.
+
+## Persistence
+
+| Data | Store |
+| ---- | ----- |
+| Server URL, volume, repeat/shuffle, cache limits | Preferences DataStore |
+| Queue order, current index, position | DataStore JSON snapshot, written throttled |
+| Auth cookie | OkHttp `CookieJar` backed by app-private storage |
+| Streamed audio | Media3 `SimpleCache` |
+| Downloads (later) | Same `SimpleCache` + Room download index |
+
+No Room before downloads exist. When downloads land, Room holds download metadata
+only; audio remains in the Media3 cache.
+
+Changing the server URL clears cookies, queue, search history, and media cache.
+Switching accounts keeps the media cache (cache keys are not user-scoped) but clears
+user-specific DataStore state.
+
+## Networking and errors
+
+- Retrofit + OkHttp + kotlinx.serialization.
+- JSON: `ignoreUnknownKeys = true`, `coerceInputValues = true`, explicit nulls off.
+- Timeouts: 15s connect, 30s read. Do not retry non-idempotent requests.
+- Retry idempotent GETs on network errors and 5xx with capped exponential backoff.
+  Propagate `CancellationException` unchanged.
+- Map failures to a sealed `ApiError`: `Unauthorized`, `Forbidden`, `NotFound`,
+  `Conflict`, `Server`, `Network`, `Parse`.
+- A 401 emits a global session-expired event; the app shell routes to Login.
+- Server errors use `{ error, message, statusCode }`; show `message` when present.
+- Resolve relative URLs defensively, even though the server normally absolutises
+  `Resource.url` and stream `baseUrl` against the request host.
+- Default to HTTPS. Cleartext is permitted at the platform level because the user
+  supplies the URL (self-hosted LAN servers are commonly HTTP); show a warning when
+  the scheme is `http` and never hardcode HTTP endpoints.
+- Manifest: `INTERNET`, `POST_NOTIFICATIONS` (runtime on Android 13+),
+  `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`.
+
+## Navigation
+
+Top-level destinations: Home, Search, Library, Settings. Detail destinations:
+album, artist, track, playlist, user, queue, now playing.
+
+- Use type-safe Navigation 3 routes (see `NavigationKeys.kt` and `Navigation.kt`).
+- Album/artist routes support both database UUIDs and identity keys
+  (`pluginId~identityId~value`), matching the web URL convention.
+- The mini player sits above the bottom bar; tapping it opens Now Playing.
+- Queue is a bottom sheet from the player.
+- Media notification deep links use the same typed route builders.
+- Back from a deep link lands on the relevant top-level tab, not the launcher home.
+
+## Images
+
+- Coil with memory and disk cache.
+- `Resource.url` already contains size query parameters; add width/height when a
+  component requests a smaller bitmap.
+- Use the shared gradient + note fallback when no artwork exists.
+- No crossfade or zoom animation; the web client does not use one.
+
+## Compatibility
+
+- Target API contract `0.2.0`, but tolerate drift with `ignoreUnknownKeys`.
+- Unknown attribute types are skipped, not decoded.
+- Missing endpoints (older server) degrade the specific feature, not the app.
+- Optional fields are nullable in models even when the current server always sends them.
+- Keep a single API version check surfaced in Settings for diagnostics.
+
+## Deliberate omissions
+
+- No multi-module Gradle split until build times justify it.
+- No domain/DTO mapper layer until a screen needs a distinct shape.
+- No Room until downloads.
+- No dynamic colour or light theme at launch.
+- No downloads UI in v1, but the cache-key boundary is final.
+- No in-app server setup wizard in v1; link users to the web setup.
