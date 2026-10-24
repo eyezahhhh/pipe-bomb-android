@@ -34,7 +34,4 @@ data class TrackRoute(
 ) : NavKey
 
 @Serializable
-data object NowPlaying : NavKey
-
-@Serializable
 data object Queue : NavKey

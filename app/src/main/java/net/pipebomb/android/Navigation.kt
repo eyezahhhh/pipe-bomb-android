@@ -31,10 +31,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,7 +59,7 @@ import net.pipebomb.android.feature.home.HomeScreen
 import net.pipebomb.android.feature.library.LibraryScreen
 import net.pipebomb.android.feature.playlist.PlaylistScreen
 import net.pipebomb.android.feature.settings.SettingsScreen
-import net.pipebomb.android.feature.player.NowPlayingScreen
+import net.pipebomb.android.feature.player.NowPlayingSheet
 import net.pipebomb.android.feature.player.QueueScreen
 import net.pipebomb.android.feature.search.SearchScreen
 import net.pipebomb.android.ui.components.TrackContextSheet
@@ -81,8 +83,8 @@ fun MainNavigation() {
     )
 
     val current = backStack.lastOrNull()
-    val fullScreen = current is NowPlaying
     var selectedTab by remember { mutableStateOf<NavKey>(Home) }
+    var playerOpen by rememberSaveable { mutableStateOf(false) }
     var menuTrack by remember { mutableStateOf<Track?>(null) }
     var contentRefreshKey by remember { mutableIntStateOf(0) }
     val navigationEasing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
@@ -91,6 +93,10 @@ fun MainNavigation() {
     val playing by playbackHost.isPlaying.collectAsStateWithLifecycle()
     val currentTrack by playbackHost.currentTrack.collectAsStateWithLifecycle()
     val isSaved by playbackHost.saved.collectAsStateWithLifecycle()
+
+    LaunchedEffect(currentTrack) {
+        if (currentTrack == null) playerOpen = false
+    }
 
     fun selectTab(route: TopLevelRoute) {
         if (selectedTab == route && backStack.size == 1) return
@@ -106,17 +112,18 @@ fun MainNavigation() {
     }
 
     fun back() {
+        val fromQueue = backStack.lastOrNull() is Queue
         if (backStack.size > 1) {
             backStack.removeLastOrNull()
         }
+        if (fromQueue) playerOpen = true
     }
 
     Scaffold(
         containerColor = PipeBombTheme.colors.bgBase,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            if (!fullScreen) {
-                TopBar(
+            TopBar(
                     title = when (current) {
                         Home -> "Home"
                         Search -> "Search"
@@ -129,29 +136,26 @@ fun MainNavigation() {
                         Queue -> "Queue"
                         else -> "Pipe Bomb"
                     },
-                    canGoBack = backStack.size > 1,
-                    onBack = { back() },
-                )
-            }
+                canGoBack = backStack.size > 1,
+                onBack = { back() },
+            )
         },
         bottomBar = {
-            if (!fullScreen) {
-                Column {
+            Column {
                     currentTrack?.let { track ->
                         MiniPlayer(
                             track = track,
                             isPlaying = playing,
-                            onOpen = { open(NowPlaying) },
+                            onOpen = { playerOpen = true },
                             onToggle = playbackHost::toggle,
                             onNext = playbackHost::next,
                         )
                     }
-                    BottomNavigation(
-                        tabs = tabs,
-                        selected = selectedTab,
-                        onSelect = ::selectTab,
-                    )
-                }
+                BottomNavigation(
+                    tabs = tabs,
+                    selected = selectedTab,
+                    onSelect = ::selectTab,
+                )
             }
         },
     ) { padding ->
@@ -163,7 +167,7 @@ fun MainNavigation() {
                 val fromKey = initialState.key as? String
                 val toKey = targetState.key as? String
                 when {
-                    isNowPlayingRoute(toKey) || isQueueRoute(toKey) -> {
+                    isQueueRoute(toKey) -> {
                         (slideIntoContainer(
                             AnimatedContentTransitionScope.SlideDirection.Up,
                             animationSpec = tween(300, easing = navigationEasing),
@@ -174,7 +178,7 @@ fun MainNavigation() {
                             ) + fadeOut(tween(160)))
                     }
 
-                    isNowPlayingRoute(fromKey) || isQueueRoute(fromKey) -> {
+                    isQueueRoute(fromKey) -> {
                         (slideIntoContainer(
                             AnimatedContentTransitionScope.SlideDirection.Down,
                             animationSpec = tween(260, easing = navigationEasing),
@@ -227,7 +231,7 @@ fun MainNavigation() {
                 val fromKey = initialState.key as? String
                 val toKey = targetState.key as? String
                 when {
-                    isNowPlayingRoute(fromKey) || isQueueRoute(fromKey) -> {
+                    isQueueRoute(fromKey) -> {
                         (slideIntoContainer(
                             AnimatedContentTransitionScope.SlideDirection.Down,
                             animationSpec = tween(240, easing = navigationEasing),
@@ -292,25 +296,6 @@ fun MainNavigation() {
                 }
                 entry<Settings> { SettingsScreen() }
                 entry<Queue> { QueueScreen() }
-                entry<NowPlaying> {
-                    val playbackState by playbackHost.state.collectAsStateWithLifecycle()
-                    NowPlayingScreen(
-                        track = currentTrack,
-                        state = playbackState,
-                        onToggle = playbackHost::toggle,
-                        onNext = playbackHost::next,
-                        onPrevious = playbackHost::previous,
-                        onSwipePrevious = playbackHost::previousTrack,
-                        onSeek = playbackHost::seekTo,
-                        onShuffle = playbackHost::toggleShuffle,
-                        onRepeat = playbackHost::cycleRepeat,
-                        onOpenQueue = { open(Queue) },
-                        onClose = { back() },
-                        isSaved = isSaved,
-                        onToggleSave = playbackHost::toggleSaved,
-                        onOpenArtist = { open(ArtistRoute(it)) },
-                    )
-                }
                 entry<AlbumRoute> { route ->
                     AlbumScreen(
                         albumId = route.albumId,
@@ -347,6 +332,31 @@ fun MainNavigation() {
                 entry<TrackRoute> { route -> PlaceholderScreen("Track", route.trackId) }
             },
         )
+        if (playerOpen) {
+            val playbackState by playbackHost.state.collectAsStateWithLifecycle()
+            NowPlayingSheet(
+                track = currentTrack,
+                state = playbackState,
+                onToggle = playbackHost::toggle,
+                onNext = playbackHost::next,
+                onPrevious = playbackHost::previous,
+                onSwipePrevious = playbackHost::previousTrack,
+                onSeek = playbackHost::seekTo,
+                onShuffle = playbackHost::toggleShuffle,
+                onRepeat = playbackHost::cycleRepeat,
+                onOpenQueue = {
+                    playerOpen = false
+                    open(Queue)
+                },
+                onDismiss = { playerOpen = false },
+                isSaved = isSaved,
+                onToggleSave = playbackHost::toggleSaved,
+                onOpenArtist = {
+                    playerOpen = false
+                    open(ArtistRoute(it))
+                },
+            )
+        }
         TrackContextSheet(
             track = menuTrack,
             onDismiss = { menuTrack = null },
@@ -480,8 +490,6 @@ private fun PlaceholderScreen(title: String, subtitle: String) {
 private val topLevelRouteKeys = setOf("Home", "Search", "Library", "Settings")
 
 private fun isTopLevelRoute(key: String?): Boolean = key in topLevelRouteKeys
-
-private fun isNowPlayingRoute(key: String?): Boolean = key == "NowPlaying"
 
 private fun isQueueRoute(key: String?): Boolean = key == "Queue"
 
