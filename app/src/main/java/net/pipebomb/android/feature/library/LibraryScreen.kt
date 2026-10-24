@@ -48,6 +48,7 @@ fun LibraryScreen(
     onOpenArtist: (String) -> Unit,
     onOpenPlaylist: (String) -> Unit,
     modifier: Modifier = Modifier,
+    refreshKey: Int = 0,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val tracks = viewModel.tracks.collectAsLazyPagingItems()
@@ -60,6 +61,9 @@ fun LibraryScreen(
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == 2) viewModel.ensureHistoryLoaded()
+    }
+    LaunchedEffect(refreshKey) {
+        if (refreshKey > 0) viewModel.refreshPlaylists()
     }
 
     Column(

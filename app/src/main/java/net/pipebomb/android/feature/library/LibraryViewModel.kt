@@ -67,6 +67,10 @@ class LibraryViewModel @Inject constructor(
     private var historyStarted = false
 
     init {
+        refreshPlaylists()
+    }
+
+    fun refreshPlaylists() {
         viewModelScope.launch {
             val own = catalogRepository.ownPlaylists()
             val public = catalogRepository.publicPlaylists()

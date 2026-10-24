@@ -2,8 +2,12 @@ package net.pipebomb.android.feature.player
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.core.animateOffsetAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,17 +20,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import net.pipebomb.android.R
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
@@ -59,16 +70,37 @@ fun NowPlayingScreen(
     modifier: Modifier = Modifier,
 ) {
     val colors = PipeBombTheme.colors
-    val swipeThreshold = with(LocalDensity.current) { 64.dp.toPx() }
+    val density = LocalDensity.current
+    val swipeThreshold = with(density) { 64.dp.toPx() }
+    val dismissThreshold = with(density) { 96.dp.toPx() }
+    var dragging by remember { mutableStateOf(false) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    val displayedOffset by animateOffsetAsState(
+        targetValue = if (dragging) dragOffset else Offset.Zero,
+        animationSpec = if (dragging) snap() else spring(dampingRatio = 0.82f, stiffness = 420f),
+        label = "playerDrag",
+    )
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(colors.bgBase)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(horizontal = PipeBombTheme.spacing.lg),
+            .padding(horizontal = PipeBombTheme.spacing.lg)
+            .graphicsLayer {
+                translationX = displayedOffset.x
+                translationY = displayedOffset.y
+                alpha = (1f - (displayedOffset.y / dismissThreshold) * 0.45f).coerceIn(0.35f, 1f)
+            },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Box(
+            modifier = Modifier
+                .padding(top = PipeBombTheme.spacing.sm, bottom = PipeBombTheme.spacing.xs)
+                .size(width = 40.dp, height = 4.dp)
+                .clip(PipeBombTheme.shapes.pill)
+                .background(colors.borderStrong),
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -114,12 +146,30 @@ fun NowPlayingScreen(
                     .aspectRatio(1f)
                     .clip(PipeBombTheme.shapes.large)
                     .pointerInput(track) {
-                        var total = 0f
-                        detectHorizontalDragGestures(
-                            onDragStart = { total = 0f },
-                            onHorizontalDrag = { _, amount -> total += amount },
+                        detectDragGestures(
+                            onDragStart = {
+                                dragging = true
+                                dragOffset = Offset.Zero
+                            },
+                            onDrag = { change, amount ->
+                                change.consume()
+                                dragOffset += amount
+                            },
                             onDragEnd = {
-                                if (total < -swipeThreshold) onNext() else if (total > swipeThreshold) onSwipePrevious()
+                                val total = dragOffset
+
+                                dragging = false
+                                dragOffset = Offset.Zero
+                                val horizontal = abs(total.x) > abs(total.y)
+                                when {
+                                    horizontal && total.x < -swipeThreshold -> onNext()
+                                    horizontal && total.x > swipeThreshold -> onSwipePrevious()
+                                    !horizontal && total.y > dismissThreshold -> onClose()
+                                }
+                            },
+                            onDragCancel = {
+                                dragging = false
+                                dragOffset = Offset.Zero
                             },
                         )
                     },

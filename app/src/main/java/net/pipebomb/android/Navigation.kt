@@ -32,6 +32,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -83,6 +84,7 @@ fun MainNavigation() {
     val fullScreen = current is NowPlaying
     var selectedTab by remember { mutableStateOf<NavKey>(Home) }
     var menuTrack by remember { mutableStateOf<Track?>(null) }
+    var contentRefreshKey by remember { mutableIntStateOf(0) }
     val navigationEasing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
     val playbackHost: PlaybackHostViewModel = hiltViewModel()
     val currentKey by playbackHost.currentKey.collectAsStateWithLifecycle()
@@ -263,6 +265,7 @@ fun MainNavigation() {
                         onOpenAlbum = { open(AlbumRoute(it)) },
                         onOpenArtist = { open(ArtistRoute(it)) },
                         onTrackMore = { menuTrack = it },
+                        refreshKey = contentRefreshKey,
                     )
                 }
                 entry<Search> {
@@ -284,6 +287,7 @@ fun MainNavigation() {
                         onOpenArtist = { open(ArtistRoute(it)) },
                         onOpenPlaylist = { open(PlaylistRoute(it)) },
                         onTrackMore = { menuTrack = it },
+                        refreshKey = contentRefreshKey,
                     )
                 }
                 entry<Settings> { SettingsScreen() }
@@ -334,6 +338,10 @@ fun MainNavigation() {
                         isPlaying = playing,
                         onPlay = playbackHost::play,
                         onTrackMore = { menuTrack = it },
+                        onDeleted = {
+                            contentRefreshKey++
+                            back()
+                        },
                     )
                 }
                 entry<TrackRoute> { route -> PlaceholderScreen("Track", route.trackId) }

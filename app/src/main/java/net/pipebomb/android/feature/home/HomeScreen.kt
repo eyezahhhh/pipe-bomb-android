@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.SpanStyle
@@ -40,10 +41,14 @@ fun HomeScreen(
     onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
     onOpenArtist: (String) -> Unit,
     modifier: Modifier = Modifier,
+    refreshKey: Int = 0,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val greeting = greetingForHour()
+    LaunchedEffect(refreshKey) {
+        if (refreshKey > 0) viewModel.load()
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = PipeBombTheme.spacing.lg),

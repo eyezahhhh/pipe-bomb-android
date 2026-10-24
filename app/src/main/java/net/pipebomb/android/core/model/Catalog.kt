@@ -106,6 +106,11 @@ data class PlaylistMember(
 )
 
 @Serializable
+data class UpsertPlaylistMemberDto(
+    val role: String,
+)
+
+@Serializable
 data class PlaylistTrack(
     val track: Track,
     val dateAdded: String? = null,

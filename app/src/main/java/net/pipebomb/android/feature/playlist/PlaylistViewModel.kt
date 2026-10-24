@@ -9,10 +9,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.pipebomb.android.core.model.Playlist
+import net.pipebomb.android.core.model.PlaylistMember
 import net.pipebomb.android.core.model.Track
+import net.pipebomb.android.core.model.User
 import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.core.net.userMessage
+import net.pipebomb.android.data.AuthRepository
 import net.pipebomb.android.data.CatalogRepository
+import net.pipebomb.android.data.SessionState
 import javax.inject.Inject
 
 const val PLAYLIST_CHUNK_SIZE = 50
@@ -25,17 +29,31 @@ data class PlaylistUiState(
     val loadingChunks: Set<Int> = emptySet(),
     val chunkErrors: Map<Int, String> = emptyMap(),
     val error: String? = null,
+    val isOwner: Boolean = false,
+    val members: List<PlaylistMember> = emptyList(),
+    val membersLoading: Boolean = false,
+    val membersLoaded: Boolean = false,
+    val membersError: String? = null,
+    val userSearchResults: List<User> = emptyList(),
+    val userSearchLoading: Boolean = false,
+    val memberActionUserUuid: String? = null,
+    val isDeleting: Boolean = false,
+    val deleteError: String? = null,
+    val deleted: Boolean = false,
 )
 
 @HiltViewModel
 class PlaylistViewModel @Inject constructor(
     private val catalogRepository: CatalogRepository,
+    authRepository: AuthRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(PlaylistUiState())
     val state: StateFlow<PlaylistUiState> = _state.asStateFlow()
     private var uuid: String? = null
     private val chunkLock = Any()
     private val chunksInFlight = mutableSetOf<Int>()
+    private val currentUserUuid =
+        (authRepository.session.value as? SessionState.Authenticated)?.user?.uuid
 
     fun load(playlistUuid: String) {
         if (uuid == playlistUuid && _state.value.playlist != null) return
@@ -59,6 +77,8 @@ class PlaylistViewModel @Inject constructor(
                         playlist = playlist,
                         totalCount = total,
                         tracksByIndex = tracksByIndex,
+                        isOwner = playlist.owner.type == "user" &&
+                            playlist.owner.userUuid == currentUserUuid,
                     )
                 }
             }
@@ -130,5 +150,146 @@ class PlaylistViewModel @Inject constructor(
             is ApiResult.Success -> all.value.map { it.track }
             is ApiResult.Failure -> (0 until total).mapNotNull(loaded::get)
         }
+    }
+    fun loadMembers(force: Boolean = false) {
+        val playlist = _state.value.playlist ?: return
+        if (!force && (_state.value.membersLoaded || _state.value.membersLoading)) return
+        viewModelScope.launch {
+            _state.update { it.copy(membersLoading = true, membersError = null) }
+            when (val result = catalogRepository.playlistMembers(playlist.uuid)) {
+                is ApiResult.Failure -> _state.update {
+                    it.copy(membersLoading = false, membersError = result.error.userMessage())
+                }
+
+                is ApiResult.Success -> _state.update {
+                    it.copy(
+                        members = result.value,
+                        membersLoading = false,
+                        membersLoaded = true,
+                        membersError = null,
+                    )
+                }
+            }
+        }
+    }
+
+    fun searchUsers(query: String) {
+        if (query.isBlank()) {
+            _state.update { it.copy(userSearchResults = emptyList(), userSearchLoading = false) }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(userSearchLoading = true, membersError = null) }
+            when (val result = catalogRepository.searchUsers(query)) {
+                is ApiResult.Failure -> _state.update {
+                    it.copy(userSearchLoading = false, membersError = result.error.userMessage())
+                }
+
+                is ApiResult.Success -> _state.update {
+                    it.copy(userSearchResults = result.value, userSearchLoading = false)
+                }
+            }
+        }
+    }
+
+    fun addMember(user: User) {
+        val playlist = _state.value.playlist ?: return
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    memberActionUserUuid = user.uuid,
+                    membersError = null,
+                    userSearchResults = emptyList(),
+                )
+            }
+            when (
+                val result = catalogRepository.setPlaylistMember(
+                    uuid = playlist.uuid,
+                    userUuid = user.uuid,
+                    role = ROLE_VIEWER,
+                )
+            ) {
+                is ApiResult.Failure -> _state.update {
+                    it.copy(
+                        memberActionUserUuid = null,
+                        membersError = result.error.userMessage(),
+                    )
+                }
+
+                is ApiResult.Success -> {
+                    _state.update { it.copy(memberActionUserUuid = null, membersLoaded = false) }
+                    loadMembers(force = true)
+                }
+            }
+        }
+    }
+
+    fun updateMemberRole(member: PlaylistMember, canEdit: Boolean) {
+        val playlist = _state.value.playlist ?: return
+        viewModelScope.launch {
+            _state.update {
+                it.copy(memberActionUserUuid = member.userUuid, membersError = null)
+            }
+            when (
+                val result = catalogRepository.setPlaylistMember(
+                    uuid = playlist.uuid,
+                    userUuid = member.userUuid,
+                    role = if (canEdit) ROLE_COLLABORATOR else ROLE_VIEWER,
+                )
+            ) {
+                is ApiResult.Failure -> _state.update {
+                    it.copy(
+                        memberActionUserUuid = null,
+                        membersError = result.error.userMessage(),
+                    )
+                }
+
+                is ApiResult.Success -> {
+                    _state.update { it.copy(memberActionUserUuid = null, membersLoaded = false) }
+                    loadMembers(force = true)
+                }
+            }
+        }
+    }
+
+    fun removeMember(member: PlaylistMember) {
+        val playlist = _state.value.playlist ?: return
+        viewModelScope.launch {
+            _state.update {
+                it.copy(memberActionUserUuid = member.userUuid, membersError = null)
+            }
+            when (val result = catalogRepository.removePlaylistMember(playlist.uuid, member.userUuid)) {
+                is ApiResult.Failure -> _state.update {
+                    it.copy(
+                        memberActionUserUuid = null,
+                        membersError = result.error.userMessage(),
+                    )
+                }
+
+                is ApiResult.Success -> {
+                    _state.update { it.copy(memberActionUserUuid = null, membersLoaded = false) }
+                    loadMembers(force = true)
+                }
+            }
+        }
+    }
+
+    fun deletePlaylist() {
+        val playlist = _state.value.playlist ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(isDeleting = true, deleteError = null) }
+            when (val result = catalogRepository.deletePlaylist(playlist.uuid)) {
+                is ApiResult.Failure -> _state.update {
+                    it.copy(isDeleting = false, deleteError = result.error.userMessage())
+                }
+
+                is ApiResult.Success -> _state.update { it.copy(isDeleting = false, deleted = true) }
+            }
+        }
+    }
+
+    private companion object {
+        const val ROLE_COLLABORATOR = "collaborator"
+        const val ROLE_VIEWER = "viewer"
     }
 }

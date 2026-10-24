@@ -9,6 +9,7 @@ import net.pipebomb.android.core.model.EphemeralSource
 import net.pipebomb.android.core.model.LoginDto
 import net.pipebomb.android.core.model.PlaybackHistoryPage
 import net.pipebomb.android.core.model.Playlist
+import net.pipebomb.android.core.model.PlaylistMember
 import net.pipebomb.android.core.model.PlaylistTrack
 import net.pipebomb.android.core.model.ReportPlaybackDto
 import net.pipebomb.android.core.model.PluginLibrary
@@ -119,6 +120,28 @@ interface PipeBombApi {
         @Path("uuid") uuid: String,
         @Body body: net.pipebomb.android.core.model.PlaylistTracksQuery,
     ): List<PlaylistTrack>
+
+    @DELETE("playlists/{uuid}")
+    suspend fun deletePlaylist(@Path("uuid") uuid: String): Response<Unit>
+
+    @GET("playlists/{uuid}/members")
+    suspend fun getPlaylistMembers(@Path("uuid") uuid: String): List<PlaylistMember>
+
+    @PUT("playlists/{uuid}/members/{userUuid}")
+    suspend fun upsertPlaylistMember(
+        @Path("uuid") uuid: String,
+        @Path("userUuid") userUuid: String,
+        @Body body: net.pipebomb.android.core.model.UpsertPlaylistMemberDto,
+    ): PlaylistMember
+
+    @DELETE("playlists/{uuid}/members/{userUuid}")
+    suspend fun removePlaylistMember(
+        @Path("uuid") uuid: String,
+        @Path("userUuid") userUuid: String,
+    ): Response<Unit>
+
+    @GET("users/search")
+    suspend fun searchUsers(@Query("q") query: String): List<User>
 
     @GET("playlists/{uuid}/all")
     suspend fun getAllPlaylistTracks(@Path("uuid") uuid: String): List<PlaylistTrack>

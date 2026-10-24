@@ -133,6 +133,37 @@ class CatalogRepository @Inject constructor(
     suspend fun allPlaylistTracks(uuid: String): ApiResult<List<PlaylistTrack>> =
         apiCall { apiClientFactory.requireApi().getAllPlaylistTracks(uuid) }
 
+    suspend fun deletePlaylist(uuid: String): ApiResult<Unit> =
+        apiCall {
+            val response = apiClientFactory.requireApi().deletePlaylist(uuid)
+            if (!response.isSuccessful) throw HttpException(response)
+        }
+
+    suspend fun playlistMembers(uuid: String): ApiResult<List<net.pipebomb.android.core.model.PlaylistMember>> =
+        apiCall { apiClientFactory.requireApi().getPlaylistMembers(uuid) }
+
+    suspend fun setPlaylistMember(
+        uuid: String,
+        userUuid: String,
+        role: String,
+    ): ApiResult<net.pipebomb.android.core.model.PlaylistMember> =
+        apiCall {
+            apiClientFactory.requireApi().upsertPlaylistMember(
+                uuid,
+                userUuid,
+                net.pipebomb.android.core.model.UpsertPlaylistMemberDto(role),
+            )
+        }
+
+    suspend fun removePlaylistMember(uuid: String, userUuid: String): ApiResult<Unit> =
+        apiCall {
+            val response = apiClientFactory.requireApi().removePlaylistMember(uuid, userUuid)
+            if (!response.isSuccessful) throw HttpException(response)
+        }
+
+    suspend fun searchUsers(query: String): ApiResult<List<net.pipebomb.android.core.model.User>> =
+        apiCall { apiClientFactory.requireApi().searchUsers(query) }
+
     suspend fun history(page: Int, pageSize: Int): ApiResult<PlaybackHistoryPage> =
         apiCall {
             apiClientFactory.requireApi().getPlaybackHistory(pageSize = pageSize, page = page)
