@@ -39,7 +39,7 @@ fun MiniPlayer(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = PipeBombTheme.spacing.sm)
+            .padding(horizontal = PipeBombTheme.spacing.sm, vertical = PipeBombTheme.spacing.xs)
             .height(64.dp)
             .clip(PipeBombTheme.shapes.medium)
             .background(PipeBombTheme.colors.bgSurface)

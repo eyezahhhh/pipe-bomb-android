@@ -4,10 +4,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -27,6 +31,7 @@ import net.pipebomb.android.playback.RepeatMode
 import net.pipebomb.android.ui.components.PipeBombIconButton
 import net.pipebomb.android.ui.components.PipeBombIconButtonSize
 import net.pipebomb.android.ui.components.PipeBombIconButtonStyle
+import net.pipebomb.android.ui.components.PipeBombIconButtonTone
 import net.pipebomb.android.ui.components.PipeBombProgressTrack
 import net.pipebomb.android.ui.components.ResourceImage
 
@@ -41,28 +46,73 @@ fun NowPlayingScreen(
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
     onOpenQueue: () -> Unit,
+    onClose: () -> Unit,
+    isSaved: Boolean = false,
+    onToggleSave: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val colors = PipeBombTheme.colors
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(PipeBombTheme.colors.bgBase)
-            .padding(PipeBombTheme.spacing.lg),
+            .background(colors.bgBase)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = PipeBombTheme.spacing.lg),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.lg),
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            PipeBombIconButton(
+                icon = ImageVector.vectorResource(R.drawable.ic_tabler_x),
+                contentDescription = "Close",
+                onClick = onClose,
+                tone = PipeBombIconButtonTone.Neutral,
+            )
+            Text(
+                text = "Now playing",
+                style = PipeBombTheme.typography.metadata,
+                color = colors.fgTertiary,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PipeBombIconButton(
+                    icon = ImageVector.vectorResource(
+                        if (isSaved) R.drawable.ic_tabler_bookmark_filled else R.drawable.ic_tabler_bookmark,
+                    ),
+                    contentDescription = if (isSaved) "Remove from saved" else "Save",
+                    onClick = onToggleSave,
+                    tone = if (isSaved) PipeBombIconButtonTone.Primary else PipeBombIconButtonTone.Neutral,
+                )
+                PipeBombIconButton(
+                    icon = ImageVector.vectorResource(R.drawable.ic_tabler_list),
+                    contentDescription = "Queue",
+                    onClick = onOpenQueue,
+                    tone = PipeBombIconButtonTone.Neutral,
+                )
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+
         if (track != null) {
             ResourceImage(
                 resource = DisplayText.artwork(track),
                 modifier = Modifier
-                    .size(300.dp)
+                    .fillMaxWidth(0.78f)
+                    .aspectRatio(1f)
                     .clip(PipeBombTheme.shapes.large),
             )
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(top = PipeBombTheme.spacing.xl),
+            ) {
                 Text(
                     text = DisplayText.title(track),
                     style = PipeBombTheme.typography.sectionHeading,
-                    color = PipeBombTheme.colors.fgPrimary,
+                    color = colors.fgPrimary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
@@ -70,7 +120,7 @@ fun NowPlayingScreen(
                 Text(
                     text = DisplayText.artists(track),
                     style = PipeBombTheme.typography.bodySecondary,
-                    color = PipeBombTheme.colors.fgSecondary,
+                    color = colors.fgSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -79,11 +129,16 @@ fun NowPlayingScreen(
             Text(
                 text = "Nothing playing",
                 style = PipeBombTheme.typography.sectionHeading,
-                color = PipeBombTheme.colors.fgTertiary,
+                color = colors.fgTertiary,
             )
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.xs)) {
+        Spacer(Modifier.weight(1f))
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.xs),
+        ) {
             PipeBombProgressTrack(
                 value = state.positionMs / 1000f,
                 max = (state.durationMs / 1000f).coerceAtLeast(1f),
@@ -98,17 +153,18 @@ fun NowPlayingScreen(
                 Text(
                     text = formatTime(state.positionMs / 1000f),
                     style = PipeBombTheme.typography.metadata,
-                    color = PipeBombTheme.colors.fgTertiary,
+                    color = colors.fgTertiary,
                 )
                 Text(
                     text = if (state.durationMs > 0) formatTime(state.durationMs / 1000f) else "-:-",
                     style = PipeBombTheme.typography.metadata,
-                    color = PipeBombTheme.colors.fgTertiary,
+                    color = colors.fgTertiary,
                 )
             }
         }
 
         Row(
+            modifier = Modifier.padding(vertical = PipeBombTheme.spacing.xl),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm),
         ) {
@@ -116,7 +172,7 @@ fun NowPlayingScreen(
                 icon = ImageVector.vectorResource(R.drawable.ic_tabler_shuffle),
                 contentDescription = "Shuffle",
                 onClick = onShuffle,
-                tone = net.pipebomb.android.ui.components.PipeBombIconButtonTone.Neutral,
+                tone = if (state.shuffle) PipeBombIconButtonTone.Primary else PipeBombIconButtonTone.Neutral,
             )
             PipeBombIconButton(
                 icon = ImageVector.vectorResource(R.drawable.ic_tabler_skip_back_filled),
@@ -148,23 +204,10 @@ fun NowPlayingScreen(
                 contentDescription = "Repeat",
                 onClick = onRepeat,
                 tone = if (state.repeat == RepeatMode.Off) {
-                    net.pipebomb.android.ui.components.PipeBombIconButtonTone.Neutral
+                    PipeBombIconButtonTone.Neutral
                 } else {
-                    net.pipebomb.android.ui.components.PipeBombIconButtonTone.Primary
+                    PipeBombIconButtonTone.Primary
                 },
-            )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            PipeBombIconButton(
-                icon = ImageVector.vectorResource(R.drawable.ic_tabler_list),
-                contentDescription = "Queue",
-                onClick = onOpenQueue,
-                size = PipeBombIconButtonSize.Medium,
-                tone = net.pipebomb.android.ui.components.PipeBombIconButtonTone.Neutral,
             )
         }
 
@@ -172,7 +215,8 @@ fun NowPlayingScreen(
             Text(
                 text = state.error!!,
                 style = PipeBombTheme.typography.metadata,
-                color = PipeBombTheme.colors.error,
+                color = colors.error,
+                modifier = Modifier.padding(bottom = PipeBombTheme.spacing.sm),
             )
         }
     }

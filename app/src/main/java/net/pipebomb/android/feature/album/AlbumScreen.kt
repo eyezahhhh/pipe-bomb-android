@@ -68,7 +68,7 @@ fun AlbumScreen(
                         ResourceImage(
                             resource = DisplayText.artwork(album),
                             modifier = Modifier
-                                .size(180.dp)
+                                .size(160.dp)
                                 .clip(PipeBombTheme.shapes.large)
                                 .background(PipeBombTheme.colors.bgElevated),
                         )
@@ -87,7 +87,7 @@ fun AlbumScreen(
                             Text(
                                 text = listOfNotNull(
                                     year?.toString(),
-                                    "${tracks.size} tracks",
+                                    if (tracks.size == 1) "1 track" else "${tracks.size} tracks",
                                 ).joinToString(" · "),
                                 style = PipeBombTheme.typography.metadata,
                                 color = PipeBombTheme.colors.fgTertiary,
@@ -126,6 +126,8 @@ fun AlbumScreen(
                         isPlaying = isPlaying,
                         onClick = { onPlay(tracks.map { it.key }, index) },
                         onPlay = { onPlay(tracks.map { it.key }, index) },
+                        showArtwork = false,
+                        trackNumber = index + 1,
                         onMore = {
                             val id = track.artists?.firstOrNull()?.artist?.uuid
                                 ?: track.artists?.firstOrNull()?.artist?.identityKey

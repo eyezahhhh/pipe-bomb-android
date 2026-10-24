@@ -26,13 +26,22 @@ object DisplayText {
         AttributeReader.string(album.attributes, "title") ?: "Unknown Album"
 
     fun artists(album: Album): String =
-        formatAlbumArtists(album.artists)
+        formatAlbumArtists(
+            album.artists,
+            AttributeReader.strings(album.attributes, "artist", multiple = true),
+        )
 
     fun title(artist: Artist): String =
         AttributeReader.string(artist.attributes, "name") ?: "Unknown Artist"
 
     fun title(playlist: Playlist): String =
         AttributeReader.string(playlist.attributes, "title") ?: "Unnamed Playlist"
+
+    fun ownerName(playlist: Playlist): String? = when (playlist.owner.type) {
+        "user" -> playlist.owner.user?.username
+        "bot" -> playlist.owner.botName ?: playlist.owner.botId
+        else -> null
+    }
 
     fun artwork(track: Track): Resource? = AttributeReader.resource(track.attributes, "front")
 
@@ -47,6 +56,18 @@ object DisplayText {
     fun durationSeconds(track: Track): Double? =
         AttributeReader.decimal(track.attributes, "duration")
 
+    fun durationSeconds(track: EphemeralTrack): Double? =
+        AttributeReader.decimal(track.attributes, "duration")
+
+    fun duration(track: Track): String? = durationSeconds(track)?.let(::formatDuration)
+
+    fun duration(track: EphemeralTrack): String? = durationSeconds(track)?.let(::formatDuration)
+
+    fun formatDuration(seconds: Double): String {
+        val total = seconds.toInt().coerceAtLeast(0)
+        return "${total / 60}:${(total % 60).toString().padStart(2, '0')}"
+    }
+
     private fun formatArtists(
         artists: List<TrackArtist>?,
         fallback: List<String>?,
@@ -59,8 +80,14 @@ object DisplayText {
         return "Unknown Artist"
     }
 
-    private fun formatAlbumArtists(artists: List<AlbumArtist>?): String {
-        if (artists.isNullOrEmpty()) return "Unknown Artist"
+    private fun formatAlbumArtists(
+        artists: List<AlbumArtist>?,
+        fallback: List<String>? = null,
+    ): String {
+        if (artists.isNullOrEmpty()) {
+            if (!fallback.isNullOrEmpty()) return fallback.joinToString(", ")
+            return "Unknown Artist"
+        }
         val names = artists.map { DisplayText.title(it.artist) }
         return joinNames(names, artists.map { it.joinPhrase })
     }

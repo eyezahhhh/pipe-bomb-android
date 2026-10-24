@@ -20,9 +20,10 @@ class ApiClientFactory(
     @Volatile
     private var cached: Pair<HttpUrl, PipeBombApi>? = null
 
-    private val client: OkHttpClient by lazy {
+    val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .cookieJar(cookieJar)
+            .addInterceptor(ServerUrlRewriteInterceptor(serverUrlProvider))
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)

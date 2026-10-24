@@ -275,6 +275,26 @@ class PlaybackController @Inject constructor(
         }
     }
 
+    fun removeFromQueue(index: Int) {
+        val current = _state.value
+        if (index !in current.queue.indices) return
+        val newQueue = current.queue.toMutableList().apply { removeAt(index) }
+        if (newQueue.isEmpty()) {
+            clearQueue()
+            return
+        }
+        if (index == current.currentIndex) {
+            play(newQueue, index.coerceAtMost(newQueue.lastIndex))
+        } else {
+            _state.update {
+                it.copy(
+                    queue = newQueue,
+                    currentIndex = if (index < it.currentIndex) it.currentIndex - 1 else it.currentIndex,
+                )
+            }
+        }
+    }
+
     fun clearQueue() {
         player.stop()
         player.clearMediaItems()

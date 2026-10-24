@@ -111,7 +111,7 @@ interface PipeBombApi {
     @GET("playlists/{uuid}")
     suspend fun getPlaylist(
         @Path("uuid") uuid: String,
-        @Query("tracks") withTracks: Boolean = true,
+        @Query("tracks") tracks: Int = 200,
     ): Playlist
 
     @GET("playlists/{uuid}/all")

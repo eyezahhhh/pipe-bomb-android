@@ -32,8 +32,8 @@ data class PipeBombTextStyles(
     val greeting: TextStyle = TextStyle(
         fontFamily = OutfitFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 40.sp,
-        lineHeight = 48.sp,
+        fontSize = 34.sp,
+        lineHeight = 42.sp,
     ),
     val hero: TextStyle = TextStyle(
         fontFamily = OutfitFamily,

@@ -7,7 +7,9 @@ import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.net.ApiClientFactory
 import net.pipebomb.android.core.net.ApiError
 import net.pipebomb.android.core.net.ApiResult
+import net.pipebomb.android.core.net.ServerUrlProvider
 import net.pipebomb.android.core.net.apiCall
+import net.pipebomb.android.core.net.rewriteServerUrl
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,6 +26,7 @@ data class ResolvedMedia(
 @Singleton
 class PlaybackResolver @Inject constructor(
     private val apiClientFactory: ApiClientFactory,
+    private val serverUrlProvider: ServerUrlProvider,
 ) {
     private val mutex = Mutex()
     private val sessions = ConcurrentHashMap<String, ResolvedMedia>()
@@ -52,7 +55,7 @@ class PlaybackResolver @Inject constructor(
                     } else {
                         ResolvedMedia.MediaType.Stream
                     }
-                    val base = session.baseUrl.trimEnd('/')
+                    val base = rewriteServerUrl(session.baseUrl, serverUrlProvider.current()).trimEnd('/')
                     val url = when (type) {
                         ResolvedMedia.MediaType.Hls -> "$base/hls/playlist.m3u8"
                         ResolvedMedia.MediaType.Stream -> "$base/stream"

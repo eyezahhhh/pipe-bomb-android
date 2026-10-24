@@ -3,6 +3,8 @@ package net.pipebomb.android.feature.search
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -15,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -25,12 +28,12 @@ import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.ui.components.AlbumCard
 import net.pipebomb.android.ui.components.ArtistCard
 import net.pipebomb.android.ui.components.EphemeralTrackRow
-import net.pipebomb.android.ui.components.PipeBombButton
-import net.pipebomb.android.ui.components.PipeBombButtonVariant
+import net.pipebomb.android.ui.components.PipeBombChip
 import net.pipebomb.android.ui.components.PipeBombSpinner
 import net.pipebomb.android.ui.components.PipeBombTextField
 import net.pipebomb.android.ui.components.TrackRow
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SearchScreen(
     currentKey: String?,
@@ -52,41 +55,37 @@ fun SearchScreen(
             placeholder = "Search tracks, albums, artists",
         )
 
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm)) {
-            item {
-                PipeBombButton(
-                    text = "Library",
-                    onClick = { viewModel.selectSource(null) },
-                    variant = if (state.selectedSource == null) {
-                        PipeBombButtonVariant.Primary
-                    } else {
-                        PipeBombButtonVariant.Secondary
-                    },
-                )
-            }
-            items(state.sources, key = { "${it.pluginId}:${it.id}" }) { source ->
-                PipeBombButton(
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+        ) {
+            PipeBombChip(
+                text = "Library",
+                selected = state.selectedSource == null,
+                onClick = { viewModel.selectSource(null) },
+            )
+            state.sources.forEach { source ->
+                PipeBombChip(
                     text = source.name,
+                    selected = state.selectedSource == source,
                     onClick = { viewModel.selectSource(source) },
-                    variant = if (state.selectedSource == source) {
-                        PipeBombButtonVariant.Primary
-                    } else {
-                        PipeBombButtonVariant.Secondary
-                    },
                 )
             }
         }
 
         when {
-            state.isLoading -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+            state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 PipeBombSpinner()
             }
 
-            state.error != null -> Text(
-                text = state.error!!,
-                style = PipeBombTheme.typography.metadata,
-                color = PipeBombTheme.colors.error,
-            )
+            state.error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = state.error!!,
+                    style = PipeBombTheme.typography.bodySecondary,
+                    color = PipeBombTheme.colors.error,
+                    textAlign = TextAlign.Center,
+                )
+            }
 
             state.selectedSource != null && state.ephemeralResults != null -> {
                 EphemeralResultsList(
@@ -103,12 +102,7 @@ fun SearchScreen(
             state.selectedSource == null && state.results != null -> {
                 val results = state.results!!
                 if (results.tracks.isEmpty() && results.albums.isEmpty() && results.artists.isEmpty()) {
-                    Text(
-                        text = "No results",
-                        style = PipeBombTheme.typography.bodySecondary,
-                        color = PipeBombTheme.colors.fgTertiary,
-                        modifier = Modifier.padding(top = 32.dp),
-                    )
+                    EmptyState("No results")
                 } else {
                     SearchResultsList(
                         results = results,
@@ -121,13 +115,20 @@ fun SearchScreen(
                 }
             }
 
-            state.query.isBlank() -> Text(
-                text = "Search your library or an external source",
-                style = PipeBombTheme.typography.bodySecondary,
-                color = PipeBombTheme.colors.fgTertiary,
-                modifier = Modifier.padding(top = 32.dp),
-            )
+            state.query.isBlank() -> EmptyState("Search your library or an external source")
         }
+    }
+}
+
+@Composable
+private fun EmptyState(text: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            text = text,
+            style = PipeBombTheme.typography.bodySecondary,
+            color = PipeBombTheme.colors.fgTertiary,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -147,7 +148,8 @@ private fun SearchResultsList(
     }
     val remainingTracks = results.tracks.drop(topTracks.size)
     LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap),
     ) {
         if (topTracks.isNotEmpty()) {
             item { SectionTitle("Top tracks") }
@@ -238,7 +240,10 @@ private fun EphemeralResultsList(
     onOpenArtist: (String) -> Unit,
 ) {
     val keys = results.tracks.map { it.key }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md)) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap),
+    ) {
         if (results.tracks.isNotEmpty()) {
             item { SectionTitle("Tracks from ${source.name}") }
             itemsIndexed(results.tracks, key = { _, track -> track.key.toString() }) { index, track ->

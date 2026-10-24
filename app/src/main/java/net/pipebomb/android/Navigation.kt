@@ -72,6 +72,7 @@ fun MainNavigation() {
     val playbackHost: PlaybackHostViewModel = hiltViewModel()
     val playbackState by playbackHost.state.collectAsStateWithLifecycle()
     val currentTrack by playbackHost.currentTrack.collectAsStateWithLifecycle()
+    val isSaved by playbackHost.saved.collectAsStateWithLifecycle()
 
     fun selectTab(route: TopLevelRoute) {
         if (selectedTab == route && backStack.size == 1) return
@@ -147,6 +148,8 @@ fun MainNavigation() {
                         isPlaying = playbackState.isPlaying,
                         onPlay = playbackHost::play,
                         onOpenPlaylist = { open(PlaylistRoute(it)) },
+                        onOpenAlbum = { open(AlbumRoute(it)) },
+                        onOpenArtist = { open(ArtistRoute(it)) },
                     )
                 }
                 entry<Search> {
@@ -165,6 +168,7 @@ fun MainNavigation() {
                         onPlay = playbackHost::play,
                         onOpenAlbum = { open(AlbumRoute(it)) },
                         onOpenArtist = { open(ArtistRoute(it)) },
+                        onOpenPlaylist = { open(PlaylistRoute(it)) },
                     )
                 }
                 entry<Settings> { SettingsScreen() }
@@ -180,6 +184,9 @@ fun MainNavigation() {
                         onShuffle = playbackHost::toggleShuffle,
                         onRepeat = playbackHost::cycleRepeat,
                         onOpenQueue = { open(Queue) },
+                        onClose = { back() },
+                        isSaved = isSaved,
+                        onToggleSave = playbackHost::toggleSaved,
                     )
                 }
                 entry<AlbumRoute> { route ->
@@ -228,12 +235,12 @@ private fun TopBar(title: String, canGoBack: Boolean, onBack: () -> Unit) {
                     Image(
                         painter = painterResource(R.drawable.pipebomb_logo),
                         contentDescription = "Pipe Bomb",
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(36.dp),
                     )
                 }
                 Text(
                     text = title,
-                    style = PipeBombTheme.typography.trackTitle,
+                    style = PipeBombTheme.typography.input,
                     color = colors.fgPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

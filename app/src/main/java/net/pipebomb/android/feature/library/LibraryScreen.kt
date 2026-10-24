@@ -19,14 +19,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.ui.components.AlbumRow
 import net.pipebomb.android.ui.components.ArtistRow
-import net.pipebomb.android.ui.components.PipeBombSpinner
 import net.pipebomb.android.ui.components.PipeBombTabs
+import net.pipebomb.android.ui.components.PipeBombSpinner
+import net.pipebomb.android.ui.components.PlaylistRow
 import net.pipebomb.android.ui.components.TrackRow
+
+private val tabs = listOf("Tracks", "Albums", "Artists", "Playlists", "History")
 
 @Composable
 fun LibraryScreen(
@@ -35,12 +39,15 @@ fun LibraryScreen(
     onPlay: (List<TrackKey>, Int) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onOpenArtist: (String) -> Unit,
+    onOpenPlaylist: (String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val tracks = viewModel.tracks.collectAsLazyPagingItems()
     val albums = viewModel.albums.collectAsLazyPagingItems()
     val artists = viewModel.artists.collectAsLazyPagingItems()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle()
+    val history by viewModel.history.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     Column(
@@ -48,7 +55,7 @@ fun LibraryScreen(
         verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
     ) {
         PipeBombTabs(
-            options = listOf("Tracks", "Albums", "Artists"),
+            options = tabs,
             selectedIndex = selectedTab,
             onSelect = { selectedTab = it },
         )
@@ -113,7 +120,7 @@ fun LibraryScreen(
                 }
             }
 
-            else -> {
+            2 -> {
                 if (artists.itemCount == 0) {
                     EmptyBox("No saved artists")
                 } else {
@@ -135,6 +142,40 @@ fun LibraryScreen(
                     }
                 }
             }
+
+            3 -> {
+                if (playlists.isEmpty()) {
+                    EmptyBox("No playlists")
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
+                        items(playlists, key = { it.uuid }) { playlist ->
+                            PlaylistRow(playlist = playlist, onClick = { onOpenPlaylist(playlist.uuid) })
+                        }
+                    }
+                }
+            }
+
+            else -> {
+                if (history.isEmpty()) {
+                    EmptyBox("Nothing played yet")
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
+                        itemsIndexed(
+                            items = history,
+                            key = { _, track -> track.key.toString() },
+                        ) { index, track ->
+                            TrackRow(
+                                track = track,
+                                isCurrent = track.key.toString() == currentKey,
+                                isPlaying = isPlaying,
+                                onClick = { onPlay(history.map { it.key }, index) },
+                                onPlay = { onPlay(history.map { it.key }, index) },
+                                onMore = {},
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -148,10 +189,11 @@ private fun LoadingBox() {
 
 @Composable
 private fun EmptyBox(text: String) {
-    Text(
-        text = text,
-        style = PipeBombTheme.typography.bodySecondary,
-        color = PipeBombTheme.colors.fgTertiary,
-        modifier = Modifier.padding(top = 32.dp),
-    )
+    Box(Modifier.fillMaxWidth().fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            text = text,
+            style = PipeBombTheme.typography.bodySecondary,
+            color = PipeBombTheme.colors.fgTertiary,
+        )
+    }
 }

@@ -22,6 +22,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
+import net.pipebomb.android.core.model.PlaylistVisibility
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.ui.components.PipeBombButton
 import net.pipebomb.android.ui.components.PipeBombSpinner
@@ -53,18 +54,19 @@ fun PlaylistScreen(
         playlist != null -> {
             val tracks = playlist.tracks.orEmpty().map { it.track }
             LazyColumn(
-                modifier = modifier.fillMaxSize().padding(PipeBombTheme.spacing.lg),
-                verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
+                modifier = modifier.fillMaxSize().padding(horizontal = PipeBombTheme.spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap),
             ) {
                 item {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = PipeBombTheme.spacing.sm),
+                        verticalAlignment = Alignment.Bottom,
                         horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.lg),
                     ) {
                         ResourceImage(
                             resource = DisplayText.artwork(playlist),
                             modifier = Modifier
-                                .size(160.dp)
+                                .size(128.dp)
                                 .clip(PipeBombTheme.shapes.large)
                                 .background(PipeBombTheme.colors.bgElevated),
                         )
@@ -74,24 +76,45 @@ fun PlaylistScreen(
                                 style = PipeBombTheme.typography.sectionHeading,
                                 color = PipeBombTheme.colors.fgPrimary,
                             )
+                            DisplayText.ownerName(playlist)?.let { owner ->
+                                Text(
+                                    text = owner,
+                                    style = PipeBombTheme.typography.bodySecondary,
+                                    color = PipeBombTheme.colors.fgSecondary,
+                                )
+                            }
                             Text(
-                                text = playlist.owner.user?.username
-                                    ?: playlist.owner.botName
-                                    ?: "Pipe Bomb",
-                                style = PipeBombTheme.typography.bodySecondary,
-                                color = PipeBombTheme.colors.fgSecondary,
-                            )
-                            Text(
-                                text = "${playlist.trackCount ?: tracks.size} tracks",
+                                text = buildString {
+                                    append(
+                                        when (playlist.visibility) {
+                                            PlaylistVisibility.Public -> "Public"
+                                            PlaylistVisibility.Unlisted -> "Unlisted"
+                                            PlaylistVisibility.Private -> "Private"
+                                        },
+                                    )
+                                    append(" · ")
+                                    val count = playlist.trackCount ?: tracks.size
+                                    append(if (count == 1) "1 track" else "${count} tracks")
+                                },
                                 style = PipeBombTheme.typography.metadata,
                                 color = PipeBombTheme.colors.fgTertiary,
                             )
-                            PipeBombButton(
-                                text = "Play",
-                                onClick = { onPlay(tracks.map { it.key }, 0) },
-                                enabled = tracks.isNotEmpty(),
-                            )
                         }
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm)) {
+                        PipeBombButton(
+                            text = "Play",
+                            onClick = { onPlay(tracks.map { it.key }, 0) },
+                            enabled = tracks.isNotEmpty(),
+                        )
+                        PipeBombButton(
+                            text = "Shuffle",
+                            onClick = { onPlay(tracks.shuffled().map { it.key }, 0) },
+                            variant = net.pipebomb.android.ui.components.PipeBombButtonVariant.Secondary,
+                            enabled = tracks.isNotEmpty(),
+                        )
                     }
                 }
                 itemsIndexed(tracks, key = { _, track -> track.key.toString() }) { index, track ->
@@ -104,6 +127,7 @@ fun PlaylistScreen(
                         onMore = {},
                     )
                 }
+                item { Box(Modifier.padding(bottom = PipeBombTheme.spacing.sm)) }
             }
         }
     }

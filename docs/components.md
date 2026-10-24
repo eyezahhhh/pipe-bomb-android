@@ -56,7 +56,7 @@ long-press instead of right-click.
 | Player bar | `player/` | 90px, surface bg, 72dp art, center transport, progress + times, bookmark, volume, queue toggle | Mini player 64-72dp above bottom nav; full Now Playing route; no volume slider on phone (system volume) |
 | Now playing row | player left | 72dp art, 4dp radius, title + artist | `NowPlayingBar` and full player header with the same hierarchy |
 | Login | `login/` | centered 300px form, 8dp gaps, primary + ghost buttons | Edge-to-edge centered column, 16dp padding, same field/button styles |
-| Welcome banner | `welcome-banner/` | 36px top padding, 2.5rem Outfit greeting, accent username, radial accent glow | Home header with 24-32dp padding, same greeting logic (morning/afternoon/evening) |
+| Welcome banner | `welcome-banner/` | 36px top padding, 2.5rem Outfit greeting, accent username, radial accent glow | Home header with 24dp top padding, 34sp Outfit greeting, accent username, Wiki/Discord links; skip the glow on phones |
 | Settings layout | `settings/` | system/user sidebars, list entries | Settings list with grouped sections; server/user split preserved |
 
 ## Detail headers

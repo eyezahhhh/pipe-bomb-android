@@ -95,7 +95,7 @@ Rules:
 | Track title, body | 1rem | 16sp, Inter, medium |
 | Inputs, nav username | 1.2rem | 19sp, Inter, medium |
 | Section heading | 1.5rem | 24sp, Outfit, bold |
-| Welcome greeting | 2.5rem | 40sp, Outfit, bold |
+| Welcome greeting | 2.5rem | 34sp on phones (40sp on tablets), Outfit, bold |
 | Page title | 3rem | 48sp, Outfit, bold |
 | Album/artist hero | clamp 1.75-4.5rem | 28-56sp, Outfit, bold, width-aware |
 

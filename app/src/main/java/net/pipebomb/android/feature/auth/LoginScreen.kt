@@ -77,7 +77,7 @@ private fun AuthContent(
                 modifier = Modifier.size(64.dp),
             )
             Text(
-                text = if (isLogin) "Sign in" else "Create account",
+                text = if (isLogin) "Log in" else "Create account",
                 style = PipeBombTheme.typography.sectionHeading,
                 color = PipeBombTheme.colors.fgPrimary,
                 textAlign = TextAlign.Center,
@@ -125,7 +125,7 @@ private fun AuthContent(
             }
 
             PipeBombButton(
-                text = if (isLogin) "Sign in" else "Create account",
+                text = if (isLogin) "Log in" else "Create account",
                 onClick = onSubmit,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = state.username.isNotBlank() && state.password.isNotBlank(),

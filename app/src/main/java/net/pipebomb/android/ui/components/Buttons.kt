@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
@@ -197,6 +199,39 @@ private fun ButtonsPreview() {
             PipeBombButton("Secondary", onClick = {}, variant = PipeBombButtonVariant.Secondary)
             PipeBombButton("Ghost", onClick = {}, variant = PipeBombButtonVariant.Ghost)
             PipeBombButton("Danger", onClick = {}, variant = PipeBombButtonVariant.Danger)
+        }
+    }
+}
+
+@Composable
+fun PipeBombChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PipeBombTheme.colors
+    Box(
+        modifier = modifier
+            .height(40.dp)
+            .clip(PipeBombTheme.shapes.pill)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .height(28.dp)
+                .clip(PipeBombTheme.shapes.pill)
+                .background(if (selected) colors.buttonPrimary else colors.buttonSecondary)
+                .padding(horizontal = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = text,
+                style = PipeBombTheme.typography.metadata,
+                color = if (selected) colors.buttonPrimaryFg else colors.buttonSecondaryFg,
+                maxLines = 1,
+            )
         }
     }
 }

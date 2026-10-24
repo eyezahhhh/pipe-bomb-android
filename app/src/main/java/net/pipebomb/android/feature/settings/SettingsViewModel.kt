@@ -35,6 +35,20 @@ class SettingsViewModel @Inject constructor(
 
     init {
         refresh()
+        viewModelScope.launch {
+            serverUrlProvider.urls.collect { url ->
+                _state.update { it.copy(serverUrl = url?.toString().orEmpty()) }
+            }
+        }
+        viewModelScope.launch {
+            authRepository.session.collect { session ->
+                _state.update {
+                    it.copy(
+                        username = (session as? SessionState.Authenticated)?.user?.username.orEmpty(),
+                    )
+                }
+            }
+        }
     }
 
     fun refresh() {
