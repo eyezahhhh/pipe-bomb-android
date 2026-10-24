@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -29,6 +31,7 @@ import net.pipebomb.android.R
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.Track
+import net.pipebomb.android.playback.RepeatMode
 import net.pipebomb.android.ui.components.PipeBombButton
 import net.pipebomb.android.ui.components.PipeBombButtonVariant
 import net.pipebomb.android.ui.components.PipeBombIconButton
@@ -65,6 +68,26 @@ fun QueueScreen(
                 enabled = state.queue.isNotEmpty(),
             )
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.lg)) {
+            QueueStatus(
+                icon = R.drawable.ic_tabler_shuffle,
+                label = if (state.shuffle) "Shuffle on" else "Shuffle off",
+                active = state.shuffle,
+            )
+            QueueStatus(
+                icon = if (state.repeat == RepeatMode.One) {
+                    R.drawable.ic_tabler_repeat_once
+                } else {
+                    R.drawable.ic_tabler_repeat
+                },
+                label = when (state.repeat) {
+                    RepeatMode.Off -> "Repeat off"
+                    RepeatMode.All -> "Repeat all"
+                    RepeatMode.One -> "Repeat one"
+                },
+                active = state.repeat != RepeatMode.Off,
+            )
+        }
         if (state.queue.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
@@ -88,6 +111,27 @@ fun QueueScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QueueStatus(icon: Int, label: String, active: Boolean) {
+    val tint = if (active) PipeBombTheme.colors.accentPrimary else PipeBombTheme.colors.fgTertiary
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.xs),
+    ) {
+        Icon(
+            imageVector = ImageVector.vectorResource(icon),
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            text = label,
+            style = PipeBombTheme.typography.metadata,
+            color = tint,
+        )
     }
 }
 

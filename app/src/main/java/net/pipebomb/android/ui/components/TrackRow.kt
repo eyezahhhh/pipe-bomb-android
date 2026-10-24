@@ -4,7 +4,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,11 +18,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import net.pipebomb.android.R
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.EphemeralTrack
@@ -107,7 +103,7 @@ private fun TrackRowContent(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(60.dp)
+            .height(56.dp)
             .clip(PipeBombTheme.shapes.medium)
             .background(if (isCurrent) colors.accentSubtle else colors.bgSurface)
             .combinedClickable(onClick = onClick, onLongClick = onMore)
@@ -119,7 +115,7 @@ private fun TrackRowContent(
             showArtwork -> ResourceImage(
                 resource = artwork,
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(40.dp)
                     .clip(PipeBombTheme.shapes.small),
             )
 
@@ -161,23 +157,6 @@ private fun TrackRowContent(
                 }
             }
         }
-        if (isCurrent) {
-            PipeBombIconButton(
-                icon = ImageVector.vectorResource(
-                    if (isPlaying) R.drawable.ic_tabler_pause_filled else R.drawable.ic_tabler_play_filled,
-                ),
-                contentDescription = if (isPlaying) "Pause" else "Play",
-                onClick = onPlay,
-                size = PipeBombIconButtonSize.Medium,
-            )
-        }
-        PipeBombIconButton(
-            icon = ImageVector.vectorResource(R.drawable.ic_tabler_dots),
-            contentDescription = "More",
-            onClick = onMore,
-            size = PipeBombIconButtonSize.Medium,
-            tone = PipeBombIconButtonTone.Neutral,
-        )
     }
 }
 

@@ -47,7 +47,9 @@ Shadow tokens: sm `0 1 2 black 25%`, md `0 4 8 black 35%`, lg `0 10 20 black 45%
 - Respect reduced motion: remove overshoot, scaling, and shimmer; keep opacity changes.
 - Never animate playback progress; it is data, not decoration.
 - No shared-element transitions between list and detail in v1; web has none.
-- Standard navigation transitions only; no choreographed page sequences.
+- Top-level tab changes use a short horizontal slide matching tab order plus a fade.
+- Detail pushes slide horizontally (280ms); Now Playing and Queue slide up (300ms) and down (260ms).
+- No choreographed page sequences or shared-element transitions.
 
 ## Don't
 

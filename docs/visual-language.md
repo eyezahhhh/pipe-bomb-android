@@ -36,7 +36,7 @@ Phone                          Tablet / foldable
 - Now Playing is a full-screen destination or large bottom sheet; queue is a bottom
   sheet opened from it.
 - Edge-to-edge with system bar insets; the base background extends behind bars.
-- Use a 16dp content inset. Grid gaps 16dp, list gaps 8dp.
+- Use a 16dp content inset. Grid gaps 16dp, list gaps 3dp.
 
 ## Screen archetypes
 

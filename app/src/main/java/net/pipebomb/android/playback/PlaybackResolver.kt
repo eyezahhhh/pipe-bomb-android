@@ -27,6 +27,7 @@ data class ResolvedMedia(
 class PlaybackResolver @Inject constructor(
     private val apiClientFactory: ApiClientFactory,
     private val serverUrlProvider: ServerUrlProvider,
+    private val sessionKeyRegistry: MediaSessionKeyRegistry,
 ) {
     private val mutex = Mutex()
     private val sessions = ConcurrentHashMap<String, ResolvedMedia>()
@@ -50,6 +51,7 @@ class PlaybackResolver @Inject constructor(
                 is ApiResult.Failure -> result
                 is ApiResult.Success -> {
                     val session = result.value
+                    sessionKeyRegistry.register(session.id, key)
                     val type = if (session.type == "hls") {
                         ResolvedMedia.MediaType.Hls
                     } else {

@@ -1,5 +1,16 @@
 package net.pipebomb.android
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +49,7 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import net.pipebomb.android.core.design.theme.PipeBombTheme
+import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.feature.album.AlbumScreen
 import net.pipebomb.android.feature.artist.ArtistScreen
 import net.pipebomb.android.feature.home.HomeScreen
@@ -47,6 +59,7 @@ import net.pipebomb.android.feature.settings.SettingsScreen
 import net.pipebomb.android.feature.player.NowPlayingScreen
 import net.pipebomb.android.feature.player.QueueScreen
 import net.pipebomb.android.feature.search.SearchScreen
+import net.pipebomb.android.ui.components.TrackContextSheet
 import net.pipebomb.android.ui.playback.MiniPlayer
 import net.pipebomb.android.ui.playback.PlaybackHostViewModel
 
@@ -62,13 +75,15 @@ fun MainNavigation() {
     val tabs = listOf(
         TopLevelTab(Home, "Home", ImageVector.vectorResource(R.drawable.ic_tabler_home)),
         TopLevelTab(Search, "Search", ImageVector.vectorResource(R.drawable.ic_tabler_search)),
-        TopLevelTab(Library, "Library", ImageVector.vectorResource(R.drawable.ic_tabler_library)),
-        TopLevelTab(Settings, "Settings", ImageVector.vectorResource(R.drawable.ic_tabler_settings)),
+        TopLevelTab(Library, "Library", ImageVector.vectorResource(R.drawable.ic_tabler_bookmark)),
+        TopLevelTab(Settings, "Settings", ImageVector.vectorResource(R.drawable.ic_tabler_user_cog)),
     )
 
     val current = backStack.lastOrNull()
     val fullScreen = current is NowPlaying
     var selectedTab by remember { mutableStateOf<NavKey>(Home) }
+    var menuTrack by remember { mutableStateOf<Track?>(null) }
+    val navigationEasing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
     val playbackHost: PlaybackHostViewModel = hiltViewModel()
     val playbackState by playbackHost.state.collectAsStateWithLifecycle()
     val currentTrack by playbackHost.currentTrack.collectAsStateWithLifecycle()
@@ -141,6 +156,102 @@ fun MainNavigation() {
             backStack = backStack,
             modifier = Modifier.padding(padding),
             onBack = { back() },
+            transitionSpec = {
+                val fromKey = initialState.key as? String
+                val toKey = targetState.key as? String
+                when {
+                    isNowPlayingRoute(toKey) || isQueueRoute(toKey) -> {
+                        (slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Up,
+                            animationSpec = tween(300, easing = navigationEasing),
+                        ) + fadeIn(tween(160))) togetherWith
+                            (slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Up,
+                                animationSpec = tween(300, easing = navigationEasing),
+                            ) + fadeOut(tween(160)))
+                    }
+
+                    isNowPlayingRoute(fromKey) || isQueueRoute(fromKey) -> {
+                        (slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Down,
+                            animationSpec = tween(260, easing = navigationEasing),
+                        ) + fadeIn(tween(140))) togetherWith
+                            (slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Down,
+                                animationSpec = tween(260, easing = navigationEasing),
+                            ) + fadeOut(tween(140)))
+                    }
+
+                    isTopLevelRoute(fromKey) && isTopLevelRoute(toKey) -> {
+                        val direction = if (tabIndex(toKey) >= tabIndex(fromKey)) 1 else -1
+                        (fadeIn(tween(160)) + slideInHorizontally(
+                            animationSpec = tween(220, easing = navigationEasing),
+                        ) { fullWidth -> direction * fullWidth }) togetherWith
+                            (fadeOut(tween(160)) + slideOutHorizontally(
+                                animationSpec = tween(220, easing = navigationEasing),
+                            ) { fullWidth -> -direction * fullWidth })
+                    }
+
+                    routeDepth(toKey) > routeDepth(fromKey) -> {
+                        (slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(280, easing = navigationEasing),
+                        ) + fadeIn(tween(160))) togetherWith
+                            (slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Left,
+                                animationSpec = tween(280, easing = navigationEasing),
+                            ) + fadeOut(tween(160)))
+                    }
+
+                    routeDepth(toKey) < routeDepth(fromKey) -> {
+                        (slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(280, easing = navigationEasing),
+                        ) + fadeIn(tween(160))) togetherWith
+                            (slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(280, easing = navigationEasing),
+                            ) + fadeOut(tween(160)))
+                    }
+
+                    else -> {
+                        (fadeIn(tween(180)) + scaleIn(tween(180), initialScale = 0.98f)) togetherWith
+                            (fadeOut(tween(120)) + scaleOut(tween(120), targetScale = 0.99f))
+                    }
+                }
+            },
+            popTransitionSpec = {
+                val fromKey = initialState.key as? String
+                val toKey = targetState.key as? String
+                when {
+                    isNowPlayingRoute(fromKey) || isQueueRoute(fromKey) -> {
+                        (slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Down,
+                            animationSpec = tween(240, easing = navigationEasing),
+                        ) + fadeIn(tween(140))) togetherWith
+                            (slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Down,
+                                animationSpec = tween(240, easing = navigationEasing),
+                            ) + fadeOut(tween(140)))
+                    }
+
+                    routeDepth(toKey) < routeDepth(fromKey) -> {
+                        (slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(240, easing = navigationEasing),
+                        ) + fadeIn(tween(140))) togetherWith
+                            (slideOutOfContainer(
+                                AnimatedContentTransitionScope.SlideDirection.Right,
+                                animationSpec = tween(240, easing = navigationEasing),
+                            ) + fadeOut(tween(140)))
+                    }
+
+                    else -> {
+                        (fadeIn(tween(160)) + scaleIn(tween(160), initialScale = 0.99f)) togetherWith
+                            (fadeOut(tween(100)) + scaleOut(tween(100), targetScale = 0.99f))
+                    }
+                }
+            },
             entryProvider = entryProvider {
                 entry<Home> {
                     HomeScreen(
@@ -150,6 +261,7 @@ fun MainNavigation() {
                         onOpenPlaylist = { open(PlaylistRoute(it)) },
                         onOpenAlbum = { open(AlbumRoute(it)) },
                         onOpenArtist = { open(ArtistRoute(it)) },
+                        onTrackMore = { menuTrack = it },
                     )
                 }
                 entry<Search> {
@@ -159,6 +271,7 @@ fun MainNavigation() {
                         onPlay = playbackHost::play,
                         onOpenAlbum = { open(AlbumRoute(it)) },
                         onOpenArtist = { open(ArtistRoute(it)) },
+                        onTrackMore = { menuTrack = it },
                     )
                 }
                 entry<Library> {
@@ -169,6 +282,7 @@ fun MainNavigation() {
                         onOpenAlbum = { open(AlbumRoute(it)) },
                         onOpenArtist = { open(ArtistRoute(it)) },
                         onOpenPlaylist = { open(PlaylistRoute(it)) },
+                        onTrackMore = { menuTrack = it },
                     )
                 }
                 entry<Settings> { SettingsScreen() }
@@ -180,6 +294,7 @@ fun MainNavigation() {
                         onToggle = playbackHost::toggle,
                         onNext = playbackHost::next,
                         onPrevious = playbackHost::previous,
+                        onSwipePrevious = playbackHost::previousTrack,
                         onSeek = playbackHost::seekTo,
                         onShuffle = playbackHost::toggleShuffle,
                         onRepeat = playbackHost::cycleRepeat,
@@ -187,6 +302,7 @@ fun MainNavigation() {
                         onClose = { back() },
                         isSaved = isSaved,
                         onToggleSave = playbackHost::toggleSaved,
+                        onOpenArtist = { open(ArtistRoute(it)) },
                     )
                 }
                 entry<AlbumRoute> { route ->
@@ -196,6 +312,7 @@ fun MainNavigation() {
                         isPlaying = playbackState.isPlaying,
                         onPlay = playbackHost::play,
                         onOpenArtist = { open(ArtistRoute(it)) },
+                        onTrackMore = { menuTrack = it },
                     )
                 }
                 entry<ArtistRoute> { route ->
@@ -205,6 +322,7 @@ fun MainNavigation() {
                         isPlaying = playbackState.isPlaying,
                         onPlay = playbackHost::play,
                         onOpenAlbum = { open(AlbumRoute(it)) },
+                        onTrackMore = { menuTrack = it },
                     )
                 }
                 entry<PlaylistRoute> { route ->
@@ -213,9 +331,26 @@ fun MainNavigation() {
                         currentKey = playbackState.currentKey?.toString(),
                         isPlaying = playbackState.isPlaying,
                         onPlay = playbackHost::play,
+                        onTrackMore = { menuTrack = it },
                     )
                 }
                 entry<TrackRoute> { route -> PlaceholderScreen("Track", route.trackId) }
+            },
+        )
+        TrackContextSheet(
+            track = menuTrack,
+            onDismiss = { menuTrack = null },
+            onPlay = { track -> playbackHost.play(listOf(track.key), 0) },
+            onPlayNext = playbackHost::playNext,
+            onAddToQueue = playbackHost::addToQueue,
+            onToggleSaved = playbackHost::setSaved,
+            onOpenArtist = {
+                menuTrack = null
+                open(ArtistRoute(it))
+            },
+            onOpenAlbum = {
+                menuTrack = null
+                open(AlbumRoute(it))
             },
         )
     }
@@ -330,4 +465,24 @@ private fun PlaceholderScreen(title: String, subtitle: String) {
             )
         }
     }
+}
+
+private val topLevelRouteKeys = setOf("Home", "Search", "Library", "Settings")
+
+private fun isTopLevelRoute(key: String?): Boolean = key in topLevelRouteKeys
+
+private fun isNowPlayingRoute(key: String?): Boolean = key == "NowPlaying"
+
+private fun isQueueRoute(key: String?): Boolean = key == "Queue"
+
+private fun tabIndex(key: String?): Int = topLevelRouteKeys.indexOf(key)
+
+private fun routeDepth(key: String?): Int = when {
+    key == null -> 0
+    key in topLevelRouteKeys -> 0
+    key.startsWith("AlbumRoute") ||
+        key.startsWith("ArtistRoute") ||
+        key.startsWith("PlaylistRoute") ||
+        key.startsWith("TrackRoute") -> 1
+    else -> 2
 }

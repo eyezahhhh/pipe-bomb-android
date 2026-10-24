@@ -35,6 +35,7 @@ fun PlaylistScreen(
     currentKey: String?,
     isPlaying: Boolean,
     onPlay: (List<TrackKey>, Int) -> Unit,
+    onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PlaylistViewModel = hiltViewModel(),
 ) {
@@ -124,7 +125,7 @@ fun PlaylistScreen(
                         isPlaying = isPlaying,
                         onClick = { onPlay(tracks.map { it.key }, index) },
                         onPlay = { onPlay(tracks.map { it.key }, index) },
-                        onMore = {},
+                        onMore = { onTrackMore(track) },
                     )
                 }
                 item { Box(Modifier.padding(bottom = PipeBombTheme.spacing.sm)) }

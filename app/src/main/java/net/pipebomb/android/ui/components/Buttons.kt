@@ -133,7 +133,7 @@ enum class PipeBombIconButtonSize(val container: Dp, val icon: Dp) {
 
 enum class PipeBombIconButtonStyle { Simple, Background, Ghost }
 
-enum class PipeBombIconButtonTone { Primary, Neutral, Danger }
+enum class PipeBombIconButtonTone { Primary, Accent, Neutral, Danger }
 
 @Composable
 fun PipeBombIconButton(
@@ -154,12 +154,15 @@ fun PipeBombIconButton(
         PipeBombIconButtonStyle.Background -> when (tone) {
             PipeBombIconButtonTone.Primary -> colors.buttonPrimary
             PipeBombIconButtonTone.Neutral -> colors.buttonSecondary
+            PipeBombIconButtonTone.Accent -> colors.buttonPrimary
             PipeBombIconButtonTone.Danger -> colors.buttonDanger
         }
     }
     val tint = when (tone) {
         PipeBombIconButtonTone.Primary ->
             if (style == PipeBombIconButtonStyle.Background) colors.buttonPrimaryFg else colors.fgPrimary
+        PipeBombIconButtonTone.Accent ->
+            if (style == PipeBombIconButtonStyle.Background) colors.buttonPrimaryFg else colors.accentPrimary
         PipeBombIconButtonTone.Neutral ->
             if (style == PipeBombIconButtonStyle.Background) colors.buttonSecondaryFg else colors.fgSecondary
         PipeBombIconButtonTone.Danger -> colors.error

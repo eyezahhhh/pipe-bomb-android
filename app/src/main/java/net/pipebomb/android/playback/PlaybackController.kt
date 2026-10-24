@@ -238,6 +238,16 @@ class PlaybackController @Inject constructor(
         }
     }
 
+    fun previousTrack() {
+        val index = _state.value.currentIndex
+        if (index > 0) {
+            _state.update { it.copy(currentIndex = index - 1) }
+            playCurrent()
+        } else {
+            player.seekTo(0)
+        }
+    }
+
     fun seekTo(positionMs: Long) {
         player.seekTo(positionMs.coerceAtLeast(0))
         _state.update { it.copy(positionMs = positionMs.coerceAtLeast(0)) }
@@ -307,6 +317,7 @@ class PlaybackController @Inject constructor(
         val key = _state.value.currentKey ?: return
         scope.launch {
             _state.update { it.copy(isBuffering = true, error = null) }
+            withContext(Dispatchers.Main) { player.pause() }
             val resolved = when (val result = resolver.resolve(key)) {
                 is ApiResult.Failure -> {
                     _state.update { it.copy(isBuffering = false, error = "Unable to play track") }

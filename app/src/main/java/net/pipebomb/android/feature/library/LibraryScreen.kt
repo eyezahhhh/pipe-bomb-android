@@ -38,6 +38,7 @@ fun LibraryScreen(
     isPlaying: Boolean,
     onPlay: (List<TrackKey>, Int) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
     onOpenArtist: (String) -> Unit,
     onOpenPlaylist: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -89,7 +90,7 @@ fun LibraryScreen(
                                         }
                                         onPlay(keys, index)
                                     },
-                                    onMore = {},
+                                    onMore = { onTrackMore(track) },
                                 )
                             }
                         }
@@ -170,7 +171,7 @@ fun LibraryScreen(
                                 isPlaying = isPlaying,
                                 onClick = { onPlay(history.map { it.key }, index) },
                                 onPlay = { onPlay(history.map { it.key }, index) },
-                                onMore = {},
+                                onMore = { onTrackMore(track) },
                             )
                         }
                     }

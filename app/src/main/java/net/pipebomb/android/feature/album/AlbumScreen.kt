@@ -38,6 +38,7 @@ fun AlbumScreen(
     isPlaying: Boolean,
     onPlay: (List<TrackKey>, Int) -> Unit,
     onOpenArtist: (String) -> Unit,
+    onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: AlbumViewModel = hiltViewModel(),
 ) {
@@ -128,11 +129,7 @@ fun AlbumScreen(
                         onPlay = { onPlay(tracks.map { it.key }, index) },
                         showArtwork = false,
                         trackNumber = index + 1,
-                        onMore = {
-                            val id = track.artists?.firstOrNull()?.artist?.uuid
-                                ?: track.artists?.firstOrNull()?.artist?.identityKey
-                            if (id != null) onOpenArtist(id)
-                        },
+                        onMore = { onTrackMore(track) },
                     )
                 }
             }

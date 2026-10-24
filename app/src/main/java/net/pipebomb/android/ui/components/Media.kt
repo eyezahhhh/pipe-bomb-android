@@ -128,7 +128,7 @@ fun PipeBombProgressTrack(
             Canvas(Modifier.fillMaxSize()) {
                 val x = (size.width * fraction).coerceIn(thumbRadius, size.width - thumbRadius)
                 drawCircle(
-                    color = colors.sliderThumb,
+                    color = colors.playerProgressPlayed,
                     radius = if (dragging) thumbRadius * 1.15f else thumbRadius,
                     center = Offset(x, size.height / 2f),
                 )

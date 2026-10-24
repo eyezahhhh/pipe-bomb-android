@@ -56,3 +56,7 @@ same product, not stock Material 3.
 The Gradle project is scaffolded. Toolchain: Gradle 9.6, AGP 9.4, JDK 21, compile/target
 SDK 37, min SDK 26. Run `./gradlew lintDebug testDebugUnitTest assembleDebug` before
 finishing a change.
+
+## Delivery
+
+- After the quality gate passes, commit the change and push it to `origin/main`.

@@ -1,11 +1,11 @@
 package net.pipebomb.android.feature.home
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -15,7 +15,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -38,13 +37,13 @@ fun HomeScreen(
     onPlay: (List<TrackKey>, Int) -> Unit,
     onOpenPlaylist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
     onOpenArtist: (String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val greeting = greetingForHour()
-    val uriHandler = LocalUriHandler.current
 
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = PipeBombTheme.spacing.lg),
@@ -54,12 +53,17 @@ fun HomeScreen(
             HomeHeader(
                 greeting = greeting,
                 username = state.username.ifBlank { "listener" },
-                onOpenWiki = { uriHandler.openUri("https://pipebomb.net/wiki") },
-                onOpenDiscord = { uriHandler.openUri("https://discord.gg/Kj7KfPDwCE") },
             )
         }
         if (state.isLoading) {
-            item { PipeBombSpinner() }
+            item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = PipeBombTheme.spacing.xxl),
+                    contentAlignment = androidx.compose.ui.Alignment.Center,
+                ) {
+                    PipeBombSpinner()
+                }
+            }
         }
         if (state.error != null) {
             item {
@@ -121,11 +125,11 @@ fun HomeScreen(
                     isPlaying = isPlaying,
                     onClick = { onPlay(state.recentTracks.map { it.key }, index) },
                     onPlay = { onPlay(state.recentTracks.map { it.key }, index) },
-                    onMore = {},
+                    onMore = { onTrackMore(track) },
                 )
             }
         }
-        item { Box(Modifier.padding(bottom = PipeBombTheme.spacing.sm)) }
+        item { Box(Modifier.padding(bottom = PipeBombTheme.spacing.lg)) }
     }
 }
 
@@ -133,8 +137,6 @@ fun HomeScreen(
 private fun HomeHeader(
     greeting: String,
     username: String,
-    onOpenWiki: () -> Unit,
-    onOpenDiscord: () -> Unit,
 ) {
     val colors = PipeBombTheme.colors
     Column(
@@ -151,21 +153,7 @@ private fun HomeHeader(
             },
             style = PipeBombTheme.typography.greeting,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.lg)) {
-            FooterLink("Wiki", onOpenWiki)
-            FooterLink("Discord", onOpenDiscord)
-        }
     }
-}
-
-@Composable
-private fun FooterLink(label: String, onClick: () -> Unit) {
-    Text(
-        text = label,
-        style = PipeBombTheme.typography.bodySecondary,
-        color = PipeBombTheme.colors.fgTertiary,
-        modifier = Modifier.clickable(onClick = onClick),
-    )
 }
 
 @Composable

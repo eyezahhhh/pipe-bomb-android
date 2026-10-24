@@ -1,6 +1,8 @@
 package net.pipebomb.android.feature.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,9 +19,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import net.pipebomb.android.R
@@ -42,6 +47,7 @@ fun NowPlayingScreen(
     onToggle: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
+    onSwipePrevious: () -> Unit = onPrevious,
     onSeek: (Long) -> Unit,
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
@@ -49,9 +55,11 @@ fun NowPlayingScreen(
     onClose: () -> Unit,
     isSaved: Boolean = false,
     onToggleSave: () -> Unit = {},
+    onOpenArtist: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = PipeBombTheme.colors
+    val swipeThreshold = with(LocalDensity.current) { 64.dp.toPx() }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -87,7 +95,7 @@ fun NowPlayingScreen(
                     tone = if (isSaved) PipeBombIconButtonTone.Primary else PipeBombIconButtonTone.Neutral,
                 )
                 PipeBombIconButton(
-                    icon = ImageVector.vectorResource(R.drawable.ic_tabler_list),
+                    icon = ImageVector.vectorResource(R.drawable.ic_tabler_sidebar_expand_filled),
                     contentDescription = "Queue",
                     onClick = onOpenQueue,
                     tone = PipeBombIconButtonTone.Neutral,
@@ -98,12 +106,23 @@ fun NowPlayingScreen(
         Spacer(Modifier.weight(1f))
 
         if (track != null) {
+            val artistId = track.artists?.firstOrNull()?.artist?.let { it.uuid ?: it.identityKey }
             ResourceImage(
                 resource = DisplayText.artwork(track),
                 modifier = Modifier
                     .fillMaxWidth(0.78f)
                     .aspectRatio(1f)
-                    .clip(PipeBombTheme.shapes.large),
+                    .clip(PipeBombTheme.shapes.large)
+                    .pointerInput(track) {
+                        var total = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { total = 0f },
+                            onHorizontalDrag = { _, amount -> total += amount },
+                            onDragEnd = {
+                                if (total < -swipeThreshold) onNext() else if (total > swipeThreshold) onSwipePrevious()
+                            },
+                        )
+                    },
             )
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -123,6 +142,12 @@ fun NowPlayingScreen(
                     color = colors.fgSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (artistId != null) TextDecoration.Underline else null,
+                    modifier = if (artistId != null) {
+                        Modifier.clickable { onOpenArtist(artistId) }
+                    } else {
+                        Modifier
+                    },
                 )
             }
         } else {
@@ -172,7 +197,7 @@ fun NowPlayingScreen(
                 icon = ImageVector.vectorResource(R.drawable.ic_tabler_shuffle),
                 contentDescription = "Shuffle",
                 onClick = onShuffle,
-                tone = if (state.shuffle) PipeBombIconButtonTone.Primary else PipeBombIconButtonTone.Neutral,
+                tone = if (state.shuffle) PipeBombIconButtonTone.Accent else PipeBombIconButtonTone.Neutral,
             )
             PipeBombIconButton(
                 icon = ImageVector.vectorResource(R.drawable.ic_tabler_skip_back_filled),
@@ -206,7 +231,7 @@ fun NowPlayingScreen(
                 tone = if (state.repeat == RepeatMode.Off) {
                     PipeBombIconButtonTone.Neutral
                 } else {
-                    PipeBombIconButtonTone.Primary
+                    PipeBombIconButtonTone.Accent
                 },
             )
         }

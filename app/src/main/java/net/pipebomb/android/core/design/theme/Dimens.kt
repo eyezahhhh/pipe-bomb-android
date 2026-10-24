@@ -20,7 +20,7 @@ data class PipeBombSpacing(
     val xl: Dp = 24.dp,
     val xxl: Dp = 32.dp,
     val screen: Dp = 16.dp,
-    val listGap: Dp = 8.dp,
+    val listGap: Dp = 3.dp,
     val gridGap: Dp = 16.dp,
 )
 

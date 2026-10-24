@@ -39,10 +39,25 @@ class PlaybackHostViewModel @Inject constructor(
     fun toggle() = controller.toggle()
     fun next() = controller.next()
     fun previous() = controller.previous()
+    fun previousTrack() = controller.previousTrack()
     fun seekTo(positionMs: Long) = controller.seekTo(positionMs)
     fun cycleRepeat() = controller.cycleRepeat()
     fun toggleShuffle() = controller.toggleShuffle()
     fun clearQueue() = controller.clearQueue()
+
+    fun playNext(track: Track) = controller.playNext(track.key)
+
+    fun addToQueue(track: Track) = controller.addToQueue(listOf(track.key))
+
+    fun setSaved(track: Track, saved: Boolean) {
+        viewModelScope.launch {
+            if (catalogRepository.setTrackSaved(track.key, saved) is ApiResult.Success) {
+                if (controller.currentTrack.value?.key == track.key) {
+                    _saved.value = saved
+                }
+            }
+        }
+    }
 
     fun toggleSaved() {
         val track = controller.currentTrack.value ?: return

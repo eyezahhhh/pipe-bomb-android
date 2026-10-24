@@ -106,7 +106,7 @@ line height 1.05-1.2; body default. No all-caps tracked-out labels.
 
 4dp base with the web's rhythm: `2, 4, 6, 8, 10, 12, 16, 24, 32`.
 
-- Screen padding 16dp. List gap 8dp. Grid gap 16dp. Section gap 24-32dp.
+- Screen padding 16dp. List gap 3dp (matches web). Grid gap 16dp. Section gap 24-32dp.
 - Button content 16dp horizontal; minimum 48dp touch height.
 - Card text inset 4dp, increasing to 8dp in selected states.
 

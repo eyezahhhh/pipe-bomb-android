@@ -41,6 +41,7 @@ fun SearchScreen(
     onPlay: (List<TrackKey>, Int) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onOpenArtist: (String) -> Unit,
+    onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
@@ -111,6 +112,7 @@ fun SearchScreen(
                         onPlay = onPlay,
                         onOpenAlbum = onOpenAlbum,
                         onOpenArtist = onOpenArtist,
+                        onTrackMore = onTrackMore,
                     )
                 }
             }
@@ -140,6 +142,7 @@ private fun SearchResultsList(
     onPlay: (List<TrackKey>, Int) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onOpenArtist: (String) -> Unit,
+    onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit,
 ) {
     val topTracks = if (results.albums.isNotEmpty() || results.artists.isNotEmpty()) {
         results.tracks.take(5)
@@ -163,7 +166,7 @@ private fun SearchResultsList(
                     isPlaying = isPlaying,
                     onClick = { onPlay(results.tracks.map { it.key }, index) },
                     onPlay = { onPlay(results.tracks.map { it.key }, index) },
-                    onMore = {},
+                    onMore = { onTrackMore(track) },
                 )
             }
         }
@@ -212,7 +215,7 @@ private fun SearchResultsList(
                     isPlaying = isPlaying,
                     onClick = { onPlay(results.tracks.map { it.key }, actualIndex) },
                     onPlay = { onPlay(results.tracks.map { it.key }, actualIndex) },
-                    onMore = {},
+                    onMore = { onTrackMore(track) },
                 )
             }
         }

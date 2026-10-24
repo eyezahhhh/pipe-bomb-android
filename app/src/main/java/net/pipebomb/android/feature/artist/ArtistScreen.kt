@@ -41,6 +41,7 @@ fun ArtistScreen(
     isPlaying: Boolean,
     onPlay: (List<TrackKey>, Int) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: ArtistViewModel = hiltViewModel(),
 ) {
@@ -122,7 +123,7 @@ fun ArtistScreen(
                             isPlaying = isPlaying,
                             onClick = { onPlay(tracks.map { it.key }, index) },
                             onPlay = { onPlay(tracks.map { it.key }, index) },
-                            onMore = {},
+                            onMore = { onTrackMore(track) },
                         )
                     }
                 }

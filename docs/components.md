@@ -35,7 +35,7 @@ long-press instead of right-click.
 
 | Component | Web reference | Web spec | Android implementation |
 | --------- | ------------- | -------- | ---------------------- |
-| Track row | `list-track/` | 54px, bg surface, 8dp radius, 42dp art, 42dp number column, title 1rem, artist 0.8rem, hover bg-hover, playing/active state | `TrackRow`: 56-64dp, same art/title hierarchy, number swaps to play/pause on press, overflow via long-press/ellipsis |
+| Track row | `list-track/` | 54px, bg surface, 8dp radius, 42dp art, 42dp number column, title 1rem, artist 0.8rem, hover bg-hover, playing/active state | `TrackRow`: 56dp, 3dp list gap, same art/title hierarchy, no play/pause or overflow control; long-press opens the track context sheet |
 | Track list | `track-list/`, `list/` | column, 8dp gap, virtualised on web | `LazyColumn` with stable keys (`TrackKey`); 8dp gap |
 | Queue row | `queue-track/` | 56px, 48dp art, drag handle, past items 50% opacity | `QueueRow` in a `LazyColumn` with drag-to-reorder; handle always visible in edit mode |
 | Queue list | `queue-list/` | sidebar, drag reorder, virtualised | Bottom sheet from mini player; drag handle + long-press reorder |
@@ -56,7 +56,7 @@ long-press instead of right-click.
 | Player bar | `player/` | 90px, surface bg, 72dp art, center transport, progress + times, bookmark, volume, queue toggle | Mini player 64-72dp above bottom nav; full Now Playing route; no volume slider on phone (system volume) |
 | Now playing row | player left | 72dp art, 4dp radius, title + artist | `NowPlayingBar` and full player header with the same hierarchy |
 | Login | `login/` | centered 300px form, 8dp gaps, primary + ghost buttons | Edge-to-edge centered column, 16dp padding, same field/button styles |
-| Welcome banner | `welcome-banner/` | 36px top padding, 2.5rem Outfit greeting, accent username, radial accent glow | Home header with 24dp top padding, 34sp Outfit greeting, accent username, Wiki/Discord links; skip the glow on phones |
+| Welcome banner | `welcome-banner/` | 36px top padding, 2.5rem Outfit greeting, accent username, radial accent glow | Home header with 24dp top padding, 34sp Outfit greeting, accent username; no external links or glow on phones |
 | Settings layout | `settings/` | system/user sidebars, list entries | Settings list with grouped sections; server/user split preserved |
 
 ## Detail headers

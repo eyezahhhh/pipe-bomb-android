@@ -19,24 +19,21 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @OptIn(UnstableApi::class)
-object TrackCacheKeyFactory : CacheKeyFactory {
-    override fun buildCacheKey(dataSpec: DataSpec): String {
-        dataSpec.key?.let { return it }
-        val segments = dataSpec.uri.pathSegments
-        val hlsIndex = segments.indexOf("hls")
-        val stableSegments = if (hlsIndex >= 0) {
-            segments.drop(hlsIndex)
-        } else {
-            segments.takeLast(2)
-        }
-        return "uri:" + stableSegments.joinToString("/")
-    }
+class TrackCacheKeyFactory(
+    private val registry: MediaSessionKeyRegistry,
+) : CacheKeyFactory {
+    override fun buildCacheKey(dataSpec: DataSpec): String =
+        registry.cacheKey(
+            path = dataSpec.uri.encodedPath ?: dataSpec.uri.toString(),
+            explicitKey = dataSpec.key,
+        )
 }
 
 @Singleton
 @OptIn(UnstableApi::class)
 class PlaybackCache @Inject constructor(
     @param:ApplicationContext context: Context,
+    registry: MediaSessionKeyRegistry,
 ) {
     private val cacheDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "media")
     private val databaseProvider = StandaloneDatabaseProvider(context)
@@ -55,7 +52,7 @@ class PlaybackCache @Inject constructor(
                 .setFragmentSize(CacheDataSink.DEFAULT_FRAGMENT_SIZE),
         )
         .setUpstreamDataSourceFactory(DefaultHttpDataSource.Factory())
-        .setCacheKeyFactory(TrackCacheKeyFactory)
+        .setCacheKeyFactory(TrackCacheKeyFactory(registry))
 
     fun clear() {
         cache.keys.toList().forEach { key ->
