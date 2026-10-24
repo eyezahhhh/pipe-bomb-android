@@ -1,16 +1,19 @@
 package net.pipebomb.android.feature.playlist
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,15 +25,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.PlaylistVisibility
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.ui.components.PipeBombButton
+import net.pipebomb.android.ui.components.PipeBombButtonVariant
 import net.pipebomb.android.ui.components.PipeBombSpinner
 import net.pipebomb.android.ui.components.ResourceImage
 import net.pipebomb.android.ui.components.TrackRow
-import kotlinx.coroutines.launch
 
 @Composable
 fun PlaylistScreen(
@@ -57,7 +61,6 @@ fun PlaylistScreen(
         }
 
         playlist != null -> {
-            val tracks = playlist.tracks.orEmpty().map { it.track }
             LazyColumn(
                 modifier = modifier.fillMaxSize().padding(horizontal = PipeBombTheme.spacing.lg),
                 verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap),
@@ -98,8 +101,13 @@ fun PlaylistScreen(
                                         },
                                     )
                                     append(" · ")
-                                    val count = playlist.trackCount ?: tracks.size
-                                    append(if (count == 1) "1 track" else "${count} tracks")
+                                    append(
+                                        if (state.totalCount == 1) {
+                                            "1 track"
+                                        } else {
+                                            "${state.totalCount} tracks"
+                                        },
+                                    )
                                 },
                                 style = PipeBombTheme.typography.metadata,
                                 color = PipeBombTheme.colors.fgTertiary,
@@ -117,7 +125,7 @@ fun PlaylistScreen(
                                     if (all.isNotEmpty()) onPlay(all.map { it.key }, 0)
                                 }
                             },
-                            enabled = tracks.isNotEmpty(),
+                            enabled = state.totalCount > 0,
                         )
                         PipeBombButton(
                             text = "Shuffle",
@@ -127,29 +135,41 @@ fun PlaylistScreen(
                                     if (all.isNotEmpty()) onPlay(all.map { it.key }, 0)
                                 }
                             },
-                            variant = net.pipebomb.android.ui.components.PipeBombButtonVariant.Secondary,
-                            enabled = tracks.isNotEmpty(),
+                            variant = PipeBombButtonVariant.Secondary,
+                            enabled = state.totalCount > 0,
                         )
                     }
                 }
-                itemsIndexed(tracks, key = { _, track -> track.key.toString() }) { index, track ->
-                    TrackRow(
-                        track = track,
-                        isCurrent = track.key.toString() == currentKey,
-                        isPlaying = isPlaying,
-                        onClick = { onPlay(tracks.map { it.key }, index) },
-                        onPlay = { onPlay(tracks.map { it.key }, index) },
-                        onMore = { onTrackMore(track) },
-                    )
-                }
-                if (state.canLoadMore || state.isLoadingMore || state.loadMoreError != null) {
-                    item(key = "load-more") {
-                        LoadMoreFooter(
-                            isLoading = state.isLoadingMore,
-                            hasError = state.loadMoreError != null,
-                            onRetry = viewModel::loadMore,
-                            onLoad = viewModel::loadMore,
+                items(
+                    count = state.totalCount,
+                    key = { index -> index },
+                ) { index ->
+                    val track = state.tracksByIndex[index]
+                    if (track != null) {
+                        TrackRow(
+                            track = track,
+                            isCurrent = track.key.toString() == currentKey,
+                            isPlaying = isPlaying,
+                            onClick = {
+                                scope.launch {
+                                    val all = viewModel.loadAllTracks()
+                                    if (all.isNotEmpty()) {
+                                        onPlay(all.map { it.key }, index.coerceIn(0, all.lastIndex))
+                                    }
+                                }
+                            },
+                            onPlay = {},
+                            onMore = { onTrackMore(track) },
                         )
+                    } else {
+                        val chunkIndex = index / PLAYLIST_CHUNK_SIZE
+                        LaunchedEffect(chunkIndex) { viewModel.ensureChunk(chunkIndex) }
+                        val chunkError = state.chunkErrors[chunkIndex]
+                        if (chunkError != null && index % PLAYLIST_CHUNK_SIZE == 0) {
+                            ChunkErrorRow(onRetry = { viewModel.ensureChunk(chunkIndex) })
+                        } else {
+                            TrackRowSkeleton()
+                        }
                     }
                 }
                 item { Box(Modifier.padding(bottom = PipeBombTheme.spacing.sm)) }
@@ -159,24 +179,65 @@ fun PlaylistScreen(
 }
 
 @Composable
-private fun LoadMoreFooter(
-    isLoading: Boolean,
-    hasError: Boolean,
-    onRetry: () -> Unit,
-    onLoad: () -> Unit,
-) {
-    Box(
-        modifier = Modifier.fillMaxWidth().padding(PipeBombTheme.spacing.lg),
-        contentAlignment = Alignment.Center,
+private fun TrackRowSkeleton() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(PipeBombTheme.shapes.medium)
+            .background(PipeBombTheme.colors.bgSurface)
+            .padding(horizontal = PipeBombTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
     ) {
-        when {
-            isLoading -> PipeBombSpinner(size = 24.dp, strokeWidth = 3.dp)
-            hasError -> PipeBombButton(
-                text = "Retry loading tracks",
-                onClick = onRetry,
-                variant = net.pipebomb.android.ui.components.PipeBombButtonVariant.Ghost,
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(PipeBombTheme.shapes.small)
+                .background(PipeBombTheme.colors.bgElevated),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.xs)) {
+            Box(
+                Modifier
+                    .width(180.dp)
+                    .height(12.dp)
+                    .clip(PipeBombTheme.shapes.small)
+                    .background(PipeBombTheme.colors.bgElevated),
             )
-            else -> androidx.compose.runtime.LaunchedEffect(Unit) { onLoad() }
+            Box(
+                Modifier
+                    .width(110.dp)
+                    .height(10.dp)
+                    .clip(PipeBombTheme.shapes.small)
+                    .background(PipeBombTheme.colors.bgElevated),
+            )
         }
+    }
+}
+
+@Composable
+private fun ChunkErrorRow(onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(PipeBombTheme.shapes.medium)
+            .background(PipeBombTheme.colors.bgSurface)
+            .clickable(onClick = onRetry)
+            .padding(horizontal = PipeBombTheme.spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
+    ) {
+        Text(
+            text = "Couldn't load tracks",
+            style = PipeBombTheme.typography.bodySecondary,
+            color = PipeBombTheme.colors.fgSecondary,
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = "Retry",
+            style = PipeBombTheme.typography.bodySecondary,
+            color = PipeBombTheme.colors.accentPrimary,
+        )
     }
 }
