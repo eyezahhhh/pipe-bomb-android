@@ -69,26 +69,21 @@ fun LibraryScreen(
                     EmptyBox("No saved tracks")
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
-                        itemsIndexed(
-                            items = List(tracks.itemCount) { tracks[it] },
-                            key = { index, track -> track?.key?.toString() ?: index.toString() },
-                        ) { index, track ->
+                        items(
+                            count = tracks.itemCount,
+                            key = { index -> tracks.peek(index)?.key?.toString() ?: "placeholder-$index" },
+                        ) { index ->
+                            val track = tracks[index]
                             if (track != null) {
                                 TrackRow(
                                     track = track,
                                     isCurrent = track.key.toString() == currentKey,
                                     isPlaying = isPlaying,
                                     onClick = {
-                                        val keys = (0 until tracks.itemCount).mapNotNull {
-                                            tracks[it]?.key
-                                        }
-                                        onPlay(keys, index)
+                                        onPlay(tracks.itemSnapshotList.items.mapNotNull { it?.key }, index)
                                     },
                                     onPlay = {
-                                        val keys = (0 until tracks.itemCount).mapNotNull {
-                                            tracks[it]?.key
-                                        }
-                                        onPlay(keys, index)
+                                        onPlay(tracks.itemSnapshotList.items.mapNotNull { it?.key }, index)
                                     },
                                     onMore = { onTrackMore(track) },
                                 )
@@ -104,14 +99,15 @@ fun LibraryScreen(
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
                         items(
-                            items = List(albums.itemCount) { albums[it] },
-                            key = { it?.uuid ?: it.hashCode().toString() },
-                        ) { album ->
-                            album?.let {
+                            count = albums.itemCount,
+                            key = { index -> albums.peek(index)?.let { it.uuid ?: it.identityKey } ?: "placeholder-$index" },
+                        ) { index ->
+                            val album = albums[index]
+                            if (album != null) {
                                 AlbumRow(
-                                    album = it,
+                                    album = album,
                                     onClick = {
-                                        val id = it.uuid ?: it.identityKey
+                                        val id = album.uuid ?: album.identityKey
                                         if (id != null) onOpenAlbum(id)
                                     },
                                 )
@@ -127,14 +123,15 @@ fun LibraryScreen(
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
                         items(
-                            items = List(artists.itemCount) { artists[it] },
-                            key = { it?.uuid ?: it.hashCode().toString() },
-                        ) { artist ->
-                            artist?.let {
+                            count = artists.itemCount,
+                            key = { index -> artists.peek(index)?.let { it.uuid ?: it.identityKey } ?: "placeholder-$index" },
+                        ) { index ->
+                            val artist = artists[index]
+                            if (artist != null) {
                                 ArtistRow(
-                                    artist = it,
+                                    artist = artist,
                                     onClick = {
-                                        val id = it.uuid ?: it.identityKey
+                                        val id = artist.uuid ?: artist.identityKey
                                         if (id != null) onOpenArtist(id)
                                     },
                                 )

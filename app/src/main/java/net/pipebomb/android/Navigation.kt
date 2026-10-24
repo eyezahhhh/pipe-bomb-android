@@ -85,7 +85,8 @@ fun MainNavigation() {
     var menuTrack by remember { mutableStateOf<Track?>(null) }
     val navigationEasing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
     val playbackHost: PlaybackHostViewModel = hiltViewModel()
-    val playbackState by playbackHost.state.collectAsStateWithLifecycle()
+    val currentKey by playbackHost.currentKey.collectAsStateWithLifecycle()
+    val playing by playbackHost.isPlaying.collectAsStateWithLifecycle()
     val currentTrack by playbackHost.currentTrack.collectAsStateWithLifecycle()
     val isSaved by playbackHost.saved.collectAsStateWithLifecycle()
 
@@ -137,7 +138,7 @@ fun MainNavigation() {
                     currentTrack?.let { track ->
                         MiniPlayer(
                             track = track,
-                            isPlaying = playbackState.isPlaying,
+                            isPlaying = playing,
                             onOpen = { open(NowPlaying) },
                             onToggle = playbackHost::toggle,
                             onNext = playbackHost::next,
@@ -255,8 +256,8 @@ fun MainNavigation() {
             entryProvider = entryProvider {
                 entry<Home> {
                     HomeScreen(
-                        currentKey = playbackState.currentKey?.toString(),
-                        isPlaying = playbackState.isPlaying,
+                        currentKey = currentKey?.toString(),
+                        isPlaying = playing,
                         onPlay = playbackHost::play,
                         onOpenPlaylist = { open(PlaylistRoute(it)) },
                         onOpenAlbum = { open(AlbumRoute(it)) },
@@ -266,8 +267,8 @@ fun MainNavigation() {
                 }
                 entry<Search> {
                     SearchScreen(
-                        currentKey = playbackState.currentKey?.toString(),
-                        isPlaying = playbackState.isPlaying,
+                        currentKey = currentKey?.toString(),
+                        isPlaying = playing,
                         onPlay = playbackHost::play,
                         onOpenAlbum = { open(AlbumRoute(it)) },
                         onOpenArtist = { open(ArtistRoute(it)) },
@@ -276,8 +277,8 @@ fun MainNavigation() {
                 }
                 entry<Library> {
                     LibraryScreen(
-                        currentKey = playbackState.currentKey?.toString(),
-                        isPlaying = playbackState.isPlaying,
+                        currentKey = currentKey?.toString(),
+                        isPlaying = playing,
                         onPlay = playbackHost::play,
                         onOpenAlbum = { open(AlbumRoute(it)) },
                         onOpenArtist = { open(ArtistRoute(it)) },
@@ -288,6 +289,7 @@ fun MainNavigation() {
                 entry<Settings> { SettingsScreen() }
                 entry<Queue> { QueueScreen() }
                 entry<NowPlaying> {
+                    val playbackState by playbackHost.state.collectAsStateWithLifecycle()
                     NowPlayingScreen(
                         track = currentTrack,
                         state = playbackState,
@@ -308,8 +310,8 @@ fun MainNavigation() {
                 entry<AlbumRoute> { route ->
                     AlbumScreen(
                         albumId = route.albumId,
-                        currentKey = playbackState.currentKey?.toString(),
-                        isPlaying = playbackState.isPlaying,
+                        currentKey = currentKey?.toString(),
+                        isPlaying = playing,
                         onPlay = playbackHost::play,
                         onOpenArtist = { open(ArtistRoute(it)) },
                         onTrackMore = { menuTrack = it },
@@ -318,8 +320,8 @@ fun MainNavigation() {
                 entry<ArtistRoute> { route ->
                     ArtistScreen(
                         artistId = route.artistId,
-                        currentKey = playbackState.currentKey?.toString(),
-                        isPlaying = playbackState.isPlaying,
+                        currentKey = currentKey?.toString(),
+                        isPlaying = playing,
                         onPlay = playbackHost::play,
                         onOpenAlbum = { open(AlbumRoute(it)) },
                         onTrackMore = { menuTrack = it },
@@ -328,8 +330,8 @@ fun MainNavigation() {
                 entry<PlaylistRoute> { route ->
                     PlaylistScreen(
                         playlistUuid = route.playlistUuid,
-                        currentKey = playbackState.currentKey?.toString(),
-                        isPlaying = playbackState.isPlaying,
+                        currentKey = currentKey?.toString(),
+                        isPlaying = playing,
                         onPlay = playbackHost::play,
                         onTrackMore = { menuTrack = it },
                     )

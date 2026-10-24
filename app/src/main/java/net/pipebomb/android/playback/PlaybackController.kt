@@ -134,7 +134,7 @@ class PlaybackController @Inject constructor(
             restored = true
         }
         scope.launch {
-            _state.debounce(1_500).collect { state ->
+            _state.debounce(5_000).collect { state ->
                 if (!restored) return@collect
                 if (state.queue.isEmpty()) {
                     queueStore.clear()

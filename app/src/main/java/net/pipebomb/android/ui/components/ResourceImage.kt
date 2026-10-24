@@ -16,7 +16,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
-import coil3.compose.SubcomposeAsyncImage
+import coil3.compose.AsyncImage
 import net.pipebomb.android.R
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.Resource
@@ -33,18 +33,15 @@ fun ResourceImage(
         AlbumArtFallback(modifier)
         return
     }
-    SubcomposeAsyncImage(
-        model = url,
-        contentDescription = contentDescription,
-        modifier = modifier,
-        contentScale = contentScale,
-        loading = {
-            Box(Modifier.fillMaxSize()) { AlbumArtFallback(Modifier.fillMaxSize()) }
-        },
-        error = {
-            Box(Modifier.fillMaxSize()) { AlbumArtFallback(Modifier.fillMaxSize()) }
-        },
-    )
+    Box(modifier) {
+        AlbumArtFallback(Modifier.fillMaxSize())
+        AsyncImage(
+            model = url,
+            contentDescription = contentDescription,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = contentScale,
+        )
+    }
 }
 
 @Composable
@@ -59,18 +56,15 @@ fun ArtistImage(
         ArtistArtFallback(modifier)
         return
     }
-    SubcomposeAsyncImage(
-        model = url,
-        contentDescription = contentDescription,
-        modifier = modifier,
-        contentScale = contentScale,
-        loading = {
-            Box(Modifier.fillMaxSize()) { ArtistArtFallback(Modifier.fillMaxSize()) }
-        },
-        error = {
-            Box(Modifier.fillMaxSize()) { ArtistArtFallback(Modifier.fillMaxSize()) }
-        },
-    )
+    Box(modifier) {
+        ArtistArtFallback(Modifier.fillMaxSize())
+        AsyncImage(
+            model = url,
+            contentDescription = contentDescription,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = contentScale,
+        )
+    }
 }
 
 @Composable
