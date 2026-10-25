@@ -32,6 +32,10 @@ class PipeBombApplication : Application(), SingletonImageLoader.Factory, Configu
             val startup = EntryPointAccessors.fromApplication(this, AppStartupEntryPoint::class.java)
             startup.playbackReporter()
             startup.downloadCoordinator().start()
+            startup.collectionSyncScheduler().apply {
+                schedulePeriodic()
+                syncNow()
+            }
         }
     }
 

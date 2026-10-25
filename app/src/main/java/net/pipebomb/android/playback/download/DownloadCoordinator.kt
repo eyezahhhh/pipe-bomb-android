@@ -125,7 +125,7 @@ class DownloadCoordinator @Inject constructor(
             }
             if (storage.resolve().downloadsEnabled &&
                 !cache.storageState.isFallback &&
-                rows.any { it.state == DownloadState.Queued.name }
+                rows.any { it.state == DownloadState.Queued.name || it.state == DownloadState.Pending.name }
             ) {
                 scheduler.schedule()
             }
@@ -205,6 +205,10 @@ class DownloadCoordinator @Inject constructor(
         manager?.isIdle ?: true
     }
 
+    suspend fun activeRequestIds(): Set<String> = withContext(Dispatchers.Main) {
+        manager?.currentDownloads.orEmpty().mapTo(mutableSetOf()) { it.request.id }
+    }
+
     suspend fun syncProgress() {
         awaitReady()
         val active = withContext(Dispatchers.Main) { manager?.currentDownloads.orEmpty() }
@@ -242,14 +246,20 @@ class DownloadCoordinator @Inject constructor(
         }
         for (row in rows) {
             if (indexed.containsKey(row.trackKey)) continue
+            if (row.state == DownloadState.Pending.name ||
+                row.state == DownloadState.Unsupported.name
+            ) {
+                continue
+            }
+            if (row.state == DownloadState.Completed.name) {
+                repository.delete(row.trackKey)
+                cache.removeTrack(row.trackKey)
+                continue
+            }
             repository.markFailed(
                 row.trackKey,
                 "Download was interrupted. Retry to resume it.",
             )
-            if (row.state == DownloadState.Completed.name) {
-                repository.delete(row.trackKey)
-                cache.removeTrack(row.trackKey)
-            }
         }
         val rowIds = rows.mapTo(mutableSetOf()) { it.trackKey }
         val orphans = indexed.keys.filterNot(rowIds::contains)

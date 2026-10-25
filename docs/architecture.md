@@ -16,9 +16,12 @@ Constraints that shape the architecture:
 - Metadata is plugin-defined, so the client must render arbitrary attributes.
 - Audio sessions are ephemeral. Playback resolves a session before playing.
 - Downloads share the Media3 cache with streaming. Cache identity is stable and
-  `TrackKey`-derived; v1 downloads progressive audio only.
+  `TrackKey`-derived; v1 downloads progressive audio only. Kept playlists and albums
+  store ordered Room snapshots and synchronize membership with reference counting.
 - Storage is user-selectable internal, primary external, or removable app-specific
   storage. Changing location deletes downloads and cached audio.
+- Offline mode is downloads-first. Connectivity gates network work but downloaded
+  collections and tracks remain fully navigable.
 - One phone app now; tablet and Android Auto later.
 
 ## Package map
@@ -38,9 +41,9 @@ when its first real file lands; do not commit empty placeholder directories.
 | `ui/` | App shell, navigation graph, shared Compose components |
 | `data/` | Repositories: auth, catalog, library, playlists, search, history, downloads |
 | `data/storage/` | Storage volume discovery, selected/fallback cache location, process restart |
-| `data/download/` | Room download metadata, DAO, repository |
+| `data/download/` | Room downloads, ordered collection snapshots, reference counting |
 | `playback/` | `MediaLibraryService`, resolver, queue, cache, reporter, Auto browse bridge |
-| `playback/download/` | Download manager, worker, scheduler, pins, reserve checks |
+| `playback/download/` | Download and collection-sync workers, schedulers, pins, reserve checks |
 | `feature/` | Screen-level composables, ViewModels, per-feature UI state |
 
 ## Dependency rules

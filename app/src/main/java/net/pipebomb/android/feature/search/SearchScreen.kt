@@ -1,5 +1,6 @@
 package net.pipebomb.android.feature.search
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +15,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -25,6 +30,8 @@ import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.EphemeralSearchResults
 import net.pipebomb.android.core.model.EphemeralSource
 import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.data.download.DownloadCollectionItem
+import net.pipebomb.android.data.download.DownloadItem
 import net.pipebomb.android.ui.components.AlbumCard
 import net.pipebomb.android.ui.components.ArtistCard
 import net.pipebomb.android.ui.components.EphemeralTrackRow
@@ -42,10 +49,21 @@ fun SearchScreen(
     onOpenAlbum: (String) -> Unit,
     onOpenArtist: (String) -> Unit,
     onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
+    isOnline: Boolean = true,
+    downloads: List<DownloadItem> = emptyList(),
+    collections: List<DownloadCollectionItem> = emptyList(),
+    onOpenCollection: (DownloadCollectionItem) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var previousOnline by remember { mutableStateOf(isOnline) }
+    LaunchedEffect(isOnline) {
+        if (!previousOnline && isOnline && state.query.isNotBlank()) {
+            viewModel.setQuery(state.query)
+        }
+        previousOnline = isOnline
+    }
     Column(
         modifier = modifier.fillMaxSize().padding(PipeBombTheme.spacing.lg),
         verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
@@ -56,7 +74,7 @@ fun SearchScreen(
             placeholder = "Search tracks, albums, artists",
         )
 
-        FlowRow(
+        if (isOnline) FlowRow(
             horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.xs),
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
@@ -75,6 +93,16 @@ fun SearchScreen(
         }
 
         when {
+            !isOnline -> OfflineDownloadsSearch(
+                downloads = downloads,
+                collections = collections,
+                query = state.query,
+                currentKey = currentKey,
+                isPlaying = isPlaying,
+                onPlay = onPlay,
+                onOpenCollection = onOpenCollection,
+            )
+
             state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 PipeBombSpinner()
             }
@@ -118,6 +146,88 @@ fun SearchScreen(
             }
 
             state.query.isBlank() -> EmptyState("Search your library or an external source")
+        }
+    }
+}
+
+@Composable
+private fun OfflineDownloadsSearch(
+    downloads: List<DownloadItem>,
+    collections: List<DownloadCollectionItem>,
+    query: String,
+    currentKey: String?,
+    isPlaying: Boolean,
+    onPlay: (List<TrackKey>, Int) -> Unit,
+    onOpenCollection: (DownloadCollectionItem) -> Unit,
+) {
+    val needle = query.trim()
+    val filtered = downloads.filter { item ->
+        needle.isEmpty() ||
+            item.entity.title.contains(needle, ignoreCase = true) ||
+            item.entity.artist?.contains(needle, ignoreCase = true) == true
+    }
+    val filteredCollections = collections.filter { collection ->
+        needle.isEmpty() || collection.title.contains(needle, ignoreCase = true)
+    }
+    if (filtered.isEmpty() && filteredCollections.isEmpty()) {
+        EmptyState(
+            if (needle.isEmpty()) "No downloads yet" else "No downloaded items match \"$needle\"",
+        )
+        return
+    }
+    val keys = filtered.map { it.key }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap),
+    ) {
+        if (filteredCollections.isNotEmpty()) {
+            item {
+                Text(
+                    text = "Kept playlists & albums",
+                    style = PipeBombTheme.typography.sectionHeading,
+                    color = PipeBombTheme.colors.fgPrimary,
+                )
+            }
+            items(filteredCollections, key = { it.id }) { collection ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenCollection(collection) }
+                        .padding(vertical = PipeBombTheme.spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = collection.title,
+                        style = PipeBombTheme.typography.trackTitle,
+                        color = PipeBombTheme.colors.fgPrimary,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = "${collection.type.name} · ${collection.downloadedCount}/${collection.memberCount} downloaded",
+                        style = PipeBombTheme.typography.metadata,
+                        color = PipeBombTheme.colors.fgSecondary,
+                    )
+                }
+            }
+        }
+        if (filtered.isNotEmpty()) {
+            item {
+                Text(
+                    text = "Downloads",
+                    style = PipeBombTheme.typography.sectionHeading,
+                    color = PipeBombTheme.colors.fgPrimary,
+                )
+            }
+            itemsIndexed(filtered, key = { _, item -> item.entity.trackKey }) { index, item ->
+                TrackRow(
+                    track = item.track,
+                    isCurrent = item.entity.trackKey == currentKey,
+                    isPlaying = isPlaying,
+                    onClick = { onPlay(keys, index) },
+                    onPlay = { onPlay(keys, index) },
+                    onMore = {},
+                )
+            }
         }
     }
 }

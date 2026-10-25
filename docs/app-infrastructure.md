@@ -88,6 +88,14 @@ album, artist, track, playlist, user, queue, now playing.
 - Optional fields are nullable in models even when the current server always sends them.
 - Keep a single API version check surfaced in Settings for diagnostics.
 
+## Offline mode
+
+- Offline mode is downloads-first. Global connectivity is exposed as a StateFlow from
+  `ConnectivityMonitor`.
+- Home and Search use local download metadata when offline. Library defaults to the
+  Downloads tab. Network-only tabs show placeholders rather than errors.
+- Kept collection detail screens use ordered Room snapshots.
+
 ## Deliberate omissions
 
 - No multi-module Gradle split until build times justify it.

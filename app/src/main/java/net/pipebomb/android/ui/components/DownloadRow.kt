@@ -118,6 +118,7 @@ fun DownloadRow(
 }
 
 private fun statusText(item: DownloadItem): String = when (item.state) {
+    DownloadState.Pending -> "Preparing"
     DownloadState.Queued -> "Queued"
     DownloadState.Downloading -> {
         val percent = (item.progress * 100f).toInt()
@@ -131,6 +132,7 @@ private fun statusText(item: DownloadItem): String = when (item.state) {
     DownloadState.Paused -> item.entity.lastError ?: "Paused"
     DownloadState.Completed -> "Downloaded"
     DownloadState.Failed -> item.entity.lastError ?: "Download failed"
+    DownloadState.Unsupported -> item.entity.lastError ?: "Unavailable offline"
 }
 
 private fun formatBytes(bytes: Long): String {

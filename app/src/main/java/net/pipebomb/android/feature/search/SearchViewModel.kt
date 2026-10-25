@@ -14,6 +14,7 @@ import net.pipebomb.android.core.model.EphemeralSearchResults
 import net.pipebomb.android.core.model.EphemeralSource
 import net.pipebomb.android.core.model.SearchResults
 import net.pipebomb.android.core.net.ApiResult
+import net.pipebomb.android.core.net.ConnectivityStatus
 import net.pipebomb.android.core.net.userMessage
 import net.pipebomb.android.data.CatalogRepository
 import javax.inject.Inject
@@ -31,6 +32,7 @@ data class SearchUiState(
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val catalogRepository: CatalogRepository,
+    private val connectivity: ConnectivityStatus,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
@@ -49,6 +51,10 @@ class SearchViewModel @Inject constructor(
     fun setQuery(query: String) {
         _state.update { it.copy(query = query, results = null, ephemeralResults = null) }
         searchJob?.cancel()
+        if (!connectivity.isOnline.value) {
+            _state.update { it.copy(isLoading = false, error = null) }
+            return
+        }
         if (query.isBlank()) {
             _state.update {
                 it.copy(isLoading = false, results = null, ephemeralResults = null, error = null)

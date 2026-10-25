@@ -1,5 +1,6 @@
 package net.pipebomb.android.feature.playlist
 
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +23,10 @@ import net.pipebomb.android.core.net.PipeBombJson
 import net.pipebomb.android.data.AuthRepository
 import net.pipebomb.android.data.CatalogRepository
 import net.pipebomb.android.data.TrackCache
+import net.pipebomb.android.core.net.ConnectivityStatus
+import kotlinx.coroutines.flow.MutableStateFlow
+import net.pipebomb.android.data.download.DownloadDatabase
+import net.pipebomb.android.data.download.DownloadRepository
 import net.pipebomb.android.test.MainDispatcherRule
 import net.pipebomb.android.test.TestFixtures
 import okhttp3.mockwebserver.MockResponse
@@ -43,6 +48,7 @@ class PlaylistViewModelTest {
     private lateinit var server: MockWebServer
     private lateinit var apiClientFactory: ApiClientFactory
     private lateinit var viewModel: PlaylistViewModel
+    private lateinit var downloadDatabase: DownloadDatabase
 
     @Before
     fun setUp() {
@@ -61,12 +67,24 @@ class PlaylistViewModelTest {
             apiClientFactory = apiClientFactory,
             cookieJar = PersistentCookieJar(InMemoryCookieStorage()),
         )
-        viewModel = PlaylistViewModel(catalogRepository, authRepository)
+        downloadDatabase = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            DownloadDatabase::class.java,
+        ).allowMainThreadQueries().build()
+        viewModel = PlaylistViewModel(
+            catalogRepository = catalogRepository,
+            downloadRepository = DownloadRepository(downloadDatabase, downloadDatabase.downloadDao()),
+            connectivity = object : ConnectivityStatus {
+                override val isOnline = MutableStateFlow(true)
+            },
+            authRepository = authRepository,
+        )
     }
 
     @After
     fun tearDown() {
         server.shutdown()
+        downloadDatabase.close()
     }
 
     @Test

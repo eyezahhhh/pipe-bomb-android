@@ -22,6 +22,7 @@ import net.pipebomb.android.data.storage.StorageLocation
 import net.pipebomb.android.data.storage.StorageLocationRepository
 import net.pipebomb.android.playback.PlaybackCache
 import net.pipebomb.android.playback.PlaybackController
+import net.pipebomb.android.playback.download.CollectionSyncScheduler
 import net.pipebomb.android.playback.download.DownloadCoordinator
 import net.pipebomb.android.playback.download.DownloadScheduler
 import javax.inject.Inject
@@ -54,6 +55,7 @@ class SettingsViewModel @Inject constructor(
     private val downloads: DownloadRepository,
     private val coordinator: DownloadCoordinator,
     private val scheduler: DownloadScheduler,
+    private val collectionSync: CollectionSyncScheduler,
     private val restarter: AppRestarter,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SettingsUiState())
@@ -164,6 +166,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             if (!storage.requestSwitch(location)) return@launch
             scheduler.cancel()
+            collectionSync.cancel()
             runCatching { coordinator.pauseAll() }
             downloads.deleteAll()
             withContext(Dispatchers.Main) { playbackController.clearQueue() }
@@ -174,6 +177,7 @@ class SettingsViewModel @Inject constructor(
     fun restartApp() {
         viewModelScope.launch(Dispatchers.IO) {
             scheduler.cancel()
+            collectionSync.cancel()
             runCatching { coordinator.pauseAll() }
             restarter.restart()
         }
@@ -189,6 +193,7 @@ class SettingsViewModel @Inject constructor(
     fun changeServer() {
         viewModelScope.launch(Dispatchers.IO) {
             scheduler.cancel()
+            collectionSync.cancel()
             runCatching { coordinator.pauseAll() }
             runCatching { coordinator.removeAll() }
             downloads.deleteAll()

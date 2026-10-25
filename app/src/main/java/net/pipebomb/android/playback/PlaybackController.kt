@@ -29,12 +29,18 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.pipebomb.android.core.attributes.AttributeReader
+import net.pipebomb.android.core.model.AttributeMap
+import net.pipebomb.android.core.model.BufferAttribute
+import net.pipebomb.android.core.model.Resource
+import net.pipebomb.android.core.model.StringAttribute
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.model.TrackIdDto
 import net.pipebomb.android.core.datastore.PlaybackQueueStore
 import net.pipebomb.android.core.datastore.PlaybackSnapshot
+import net.pipebomb.android.core.net.ApiError
 import net.pipebomb.android.core.net.ApiResult
+import net.pipebomb.android.core.net.ConnectivityStatus
 import net.pipebomb.android.core.net.userMessage
 import net.pipebomb.android.data.CatalogRepository
 import net.pipebomb.android.di.ApplicationScope
@@ -66,6 +72,7 @@ class PlaybackController @Inject constructor(
     private val cache: PlaybackCache,
     private val catalogRepository: CatalogRepository,
     private val queueStore: PlaybackQueueStore,
+    private val connectivity: ConnectivityStatus,
 ) {
     private val _state = MutableStateFlow(PlaybackUiState())
     val state: StateFlow<PlaybackUiState> = _state.asStateFlow()
@@ -389,19 +396,21 @@ class PlaybackController @Inject constructor(
             withContext(Dispatchers.Main) { player.pause() }
             val resolved = when (val result = resolver.resolve(key)) {
                 is ApiResult.Failure -> {
-                    _state.update { it.copy(isBuffering = false, error = result.error.userMessage()) }
+                    val message = if (result.error is ApiError.Local) {
+                        result.error.userMessage()
+                    } else if (!connectivity.isOnline.value) {
+                        "This track isn't downloaded and can't stream offline."
+                    } else {
+                        result.error.userMessage()
+                    }
+                    _state.update { it.copy(isBuffering = false, error = message) }
                     return@launch
                 }
 
                 is ApiResult.Success -> result.value
             }
             val fetchedTrack = (catalogRepository.tracks(listOf(key)) as? ApiResult.Success)?.value?.firstOrNull()
-            val track = fetchedTrack ?: Track(
-                trackId = key.trackId,
-                pluginId = key.pluginId,
-                libraryId = key.libraryId,
-                title = key.trackId,
-            )
+            val track = fetchedTrack ?: fallbackTrack(key, resolved)
             _currentTrack.value = track
             val item = buildMediaItem(key, resolved, track)
             withContext(Dispatchers.Main) {
@@ -419,6 +428,34 @@ class PlaybackController @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun fallbackTrack(key: TrackKey, media: ResolvedMedia): Track {
+        if (media.fromDownload) {
+            val title = media.downloadTitle ?: key.trackId
+            val attributes = buildMap {
+                put("title", StringAttribute(listOf(title), listOf(title)))
+                media.downloadArtist?.let {
+                    put("artist", StringAttribute(listOf(it), listOf(it)))
+                }
+                media.downloadArtworkUrl?.let {
+                    put("front", BufferAttribute(listOf(Resource(url = it))))
+                }
+            }
+            return Track(
+                trackId = key.trackId,
+                pluginId = key.pluginId,
+                libraryId = key.libraryId,
+                title = title,
+                attributes = AttributeMap(attributes),
+            )
+        }
+        return Track(
+            trackId = key.trackId,
+            pluginId = key.pluginId,
+            libraryId = key.libraryId,
+            title = key.trackId,
+        )
     }
 
     private fun buildMediaItem(

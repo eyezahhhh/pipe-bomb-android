@@ -24,6 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,7 +49,11 @@ import net.pipebomb.android.R
 import net.pipebomb.android.core.model.PlaylistMember
 import net.pipebomb.android.core.model.PlaylistVisibility
 import net.pipebomb.android.core.model.User
+import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.data.download.DownloadCollectionDraft
+import net.pipebomb.android.data.download.DownloadCollectionItem
+import net.pipebomb.android.data.download.DownloadCollectionType
 import net.pipebomb.android.ui.components.MediaActions
 import net.pipebomb.android.ui.components.PipeBombButton
 import net.pipebomb.android.ui.components.PipeBombCheckbox
@@ -73,10 +78,19 @@ fun PlaylistScreen(
     onPlayNext: (List<TrackKey>) -> Unit = {},
     onAddToQueue: (List<TrackKey>) -> Unit = {},
     onDeleted: () -> Unit = {},
+    downloadCollection: DownloadCollectionItem? = null,
+    isOnline: Boolean = true,
+    downloadBusy: Boolean = false,
+    onKeepDownloaded: (DownloadCollectionDraft, List<Track>) -> Unit = { _, _ -> },
+    onStopKeeping: (DownloadCollectionItem) -> Unit = {},
+    onSyncCollection: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PlaylistViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(playlistUuid) { viewModel.load(playlistUuid) }
+    LaunchedEffect(playlistUuid) {
+        viewModel.load(playlistUuid)
+        onSyncCollection(DownloadCollectionType.Playlist.collectionId(playlistUuid))
+    }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playlist = state.playlist
     val scope = rememberCoroutineScope()
@@ -85,6 +99,7 @@ fun PlaylistScreen(
     var showDelete by remember { mutableStateOf(false) }
     var memberQuery by remember { mutableStateOf("") }
     var loadingAll by remember { mutableStateOf(false) }
+    var showStopDownload by remember { mutableStateOf(false) }
 
     fun loadAllThen(action: (List<net.pipebomb.android.core.model.Track>) -> Unit) {
         if (loadingAll) return
@@ -166,6 +181,9 @@ fun PlaylistScreen(
                                             "${state.totalCount} tracks"
                                         },
                                     )
+                                    if (state.isOfflineCopy) {
+                                        append(" · Downloaded copy")
+                                    }
                                 },
                                 style = PipeBombTheme.typography.metadata,
                                 color = PipeBombTheme.colors.fgTertiary,
@@ -192,11 +210,32 @@ fun PlaylistScreen(
                             onAddToEnd = {
                                 loadAllThen { all -> onAddToQueue(all.map { it.key }) }
                             },
+                            onDownload = {
+                                if (downloadCollection == null) {
+                                    loadAllThen { all ->
+                                        onKeepDownloaded(
+                                            DownloadCollectionDraft(
+                                                type = DownloadCollectionType.Playlist,
+                                                sourceId = playlist.uuid,
+                                                title = DisplayText.title(playlist),
+                                                artworkUrl = DisplayText.artwork(playlist)?.url,
+                                                ownerName = DisplayText.ownerName(playlist),
+                                            ),
+                                            all,
+                                        )
+                                    }
+                                } else {
+                                    showStopDownload = true
+                                }
+                            },
+                            downloadLoading = downloadBusy,
+                            downloadEnabled = isOnline || downloadCollection != null,
+                            isDownloaded = downloadCollection != null,
                             enabled = state.totalCount > 0,
                             playLoading = loadingAll,
                         )
                         Spacer(Modifier.weight(1f))
-                        PlaylistOptionsMenu(
+                        if (isOnline) PlaylistOptionsMenu(
                             expanded = optionsOpen,
                             onExpandedChange = { optionsOpen = it },
                             canDelete = state.isOwner,
@@ -267,6 +306,41 @@ fun PlaylistScreen(
                     error = state.deleteError,
                     onDismiss = { if (!state.isDeleting) showDelete = false },
                     onConfirm = viewModel::deletePlaylist,
+                )
+            }
+            if (showStopDownload && downloadCollection != null) {
+                AlertDialog(
+                    onDismissRequest = { showStopDownload = false },
+                    containerColor = PipeBombTheme.colors.bgElevated,
+                    title = {
+                        Text(
+                            text = "Stop keeping this playlist downloaded?",
+                            style = PipeBombTheme.typography.sectionHeading,
+                            color = PipeBombTheme.colors.fgPrimary,
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "Collection-only tracks will be removed. Tracks downloaded manually or used by another kept collection will remain.",
+                            style = PipeBombTheme.typography.bodySecondary,
+                            color = PipeBombTheme.colors.fgSecondary,
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showStopDownload = false
+                                onStopKeeping(downloadCollection)
+                            },
+                        ) {
+                            Text("Stop keeping", color = PipeBombTheme.colors.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showStopDownload = false }) {
+                            Text("Cancel", color = PipeBombTheme.colors.fgSecondary)
+                        }
+                    },
                 )
             }
         }

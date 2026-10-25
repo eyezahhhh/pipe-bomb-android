@@ -10,6 +10,8 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
 import net.pipebomb.android.BuildConfig
 import net.pipebomb.android.core.net.ApiClientFactory
+import net.pipebomb.android.core.net.ConnectivityMonitor
+import net.pipebomb.android.core.net.ConnectivityStatus
 import net.pipebomb.android.core.net.CookieStorage
 import net.pipebomb.android.core.net.DataStoreServerUrlProvider
 import net.pipebomb.android.core.net.PersistentCookieJar
@@ -57,4 +59,10 @@ abstract class NetworkBindingsModule {
     abstract fun bindServerUrlProvider(
         impl: DataStoreServerUrlProvider,
     ): ServerUrlProvider
+
+    @Binds
+    @Singleton
+    abstract fun bindConnectivityStatus(
+        impl: ConnectivityMonitor,
+    ): ConnectivityStatus
 }

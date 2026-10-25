@@ -5,7 +5,12 @@ import net.pipebomb.android.core.datastore.AppSettingsStore
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.net.ApiResult
+import net.pipebomb.android.core.net.ConnectivityStatus
 import net.pipebomb.android.core.net.userMessage
+import net.pipebomb.android.data.AuthRepository
+import net.pipebomb.android.data.SessionState
+import net.pipebomb.android.data.download.BulkEnqueueResult
+import net.pipebomb.android.data.download.DownloadCollectionDraft
 import net.pipebomb.android.data.download.DownloadRepository
 import net.pipebomb.android.data.download.DownloadState
 import net.pipebomb.android.data.storage.StorageLocationRepository
@@ -14,6 +19,11 @@ import net.pipebomb.android.playback.PlaybackResolver
 import net.pipebomb.android.playback.ResolvedMedia
 import javax.inject.Inject
 import javax.inject.Singleton
+
+sealed interface CollectionStartResult {
+    data class Started(val queued: Int, val skipped: Int) : CollectionStartResult
+    data class Error(val message: String) : CollectionStartResult
+}
 
 sealed interface DownloadStartResult {
     data object Started : DownloadStartResult
@@ -30,6 +40,8 @@ class DownloadStarter @Inject constructor(
     private val storage: StorageLocationRepository,
     private val settings: AppSettingsStore,
     private val cache: PlaybackCache,
+    private val authRepository: AuthRepository,
+    private val connectivity: ConnectivityStatus,
 ) {
     suspend fun start(track: Track): DownloadStartResult {
         val existing = repository.get(track.key)
@@ -37,14 +49,34 @@ class DownloadStarter @Inject constructor(
                 DownloadState.Completed.name,
                 DownloadState.Queued.name,
                 DownloadState.Downloading.name,
+                DownloadState.Pending.name,
             )
         ) {
             return DownloadStartResult.AlreadyPresent
+        }
+        if (existing?.state == DownloadState.Unsupported.name) {
+            return DownloadStartResult.Unsupported
         }
         preflightError()?.let { return it }
         return resolveAndQueue(track.key) { media ->
             repository.enqueue(track, media)
         }
+    }
+
+    suspend fun subscribeCollection(
+        draft: DownloadCollectionDraft,
+        tracks: List<Track>,
+    ): CollectionStartResult {
+        preflightError()?.let { return CollectionStartResult.Error(it.message) }
+        val user = authRepository.session.value as? SessionState.Authenticated
+        val result = repository.subscribeCollection(
+            draft = draft,
+            tracks = tracks,
+            accountUuid = user?.user?.uuid,
+            accountName = user?.user?.username,
+        )
+        scheduler.schedule()
+        return CollectionStartResult.Started(result.queued, result.skipped)
     }
 
     suspend fun retry(trackKey: TrackKey): DownloadStartResult {
@@ -58,6 +90,9 @@ class DownloadStarter @Inject constructor(
     }
 
     private suspend fun preflightError(): DownloadStartResult.Error? {
+        if (!connectivity.isOnline.value) {
+            return DownloadStartResult.Error("Connect to download music")
+        }
         if (!storage.resolve().downloadsEnabled || cache.storageState.isFallback) {
             return DownloadStartResult.Error(
                 "The selected storage is unavailable. Reconnect it or choose another location.",

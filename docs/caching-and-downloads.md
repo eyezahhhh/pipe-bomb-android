@@ -58,27 +58,59 @@ completed download.
   plugin-provided generation token later; never encode sessions into the key.
 - Changing server URL clears the cache and download index because track IDs are
   server-scoped.
-- Switching accounts keeps ordinary streamed cache but clears user-specific state.
-  Downloads are not user-scoped and remain.
+- Switching accounts keeps ordinary streamed cache, downloads, and kept-collection
+  subscriptions. Auto-sync skips collections belonging to a different account until
+  that account signs in again.
 
 ## Downloads
 
-V1 downloads progressive streams only. HLS tracks are rejected before a download row
-is created with: “HLS downloads are not supported yet.” HLS playback and HLS streamed
-caching continue to work. A future dedicated server download endpoint will replace
-the progressive-only source resolver.
+V1 downloads progressive streams only. Single-track HLS requests are rejected with
+“HLS downloads are not supported yet.” In collection snapshots, HLS members become
+hidden `Unsupported` rows and are skipped silently. HLS playback and HLS streamed
+caching continue to work. A future dedicated server endpoint will replace the
+progressive-only source resolver.
 
 **Model**
 
 - A download is a pinned cache entry plus metadata:
   `trackKey`, display title/artist/album, artwork URL snapshot, session id, media URL,
   bytes, state, requestedAt, completedAt, lastError.
-- State: `Queued`, `Downloading`, `Paused`, `Completed`, `Failed`.
+- State: `Pending` (hidden preparation), `Queued`, `Downloading`, `Paused`,
+  `Completed`, `Failed`, and `Unsupported` (hidden HLS skip).
+- A download is manually requested (`manual = true`) or owned by kept collections.
 - Metadata lives in Room; audio bytes stay in `SimpleCache`.
+
+**Manual vs kept downloads**
+
+- Manual downloads remain until removed by the user.
+- Albums and playlists can be kept downloaded. Their ordered membership is stored in
+  `download_collections` and `download_collection_tracks`.
+- A track is retained while manual or referenced by at least one kept collection.
+- Removing a collection releases tracks with no manual or other collection reference.
+- Collection-managed tracks cannot be removed individually. The UI names the owning
+  collections and directs the user to stop keeping them.
+- Signing out keeps everything; another account cannot sync those collections until
+  the owning account returns.
+
+**Collection synchronization**
+
+- Playlists use `dateModified` to skip unchanged membership fetches; albums reconcile
+  their current track list.
+- Sync runs at startup, after login, when opening a kept collection, after relevant
+  local playlist edits, and every 6 hours through WorkManager.
+- New members become hidden `Pending` rows; removed members are released according to
+  reference counts.
+- Display metadata is refreshed from the remote collection without redownloading audio.
+- Same-account 404 unsubscribes a missing collection. 403, network, and server failures
+  retain downloads and show a sync error. Account mismatch skips sync.
+- Playlist and album screens open the ordered local snapshot when offline or when the
+  server cannot be reached.
 
 **Downloading**
 
-- Resolve a fresh progressive session before enqueue and again when the worker starts.
+- Resolve a fresh progressive session when the worker prepares each track.
+- Prepare a bounded window of downloads at a time so large collections do not create
+  hundreds of live server sessions.
 - Use Media3 `DownloadManager` with the explicit stream cache key.
 - Run queued work through a Hilt `CoroutineWorker` with a data-sync foreground
   notification and network constraint.
@@ -113,6 +145,23 @@ display title/artist and the saved media URL after a process restart. The last
 authenticated user is cached so a network failure does not force the Login screen;
 a definitive 401 still does. Do not add a separate offline player path.
 
+## Offline mode
+
+Connectivity is tracked by `ConnectivityMonitor`. The app is downloads-first offline:
+
+- A slim “Offline · Showing downloads” banner appears below the app bar and links to
+  Library → Downloads.
+- Home shows kept collections and recently downloaded tracks instead of network shelves.
+- Library opens Downloads; other tabs show an offline placeholder.
+- Search filters downloaded tracks and kept collections locally.
+- Kept album/playlist screens render their ordered local snapshot with a “Downloaded
+  copy” label. Non-kept details show a connect-to-view message.
+- Downloaded playback continues. A non-downloaded stream reports that it is unavailable
+  offline.
+- Writes that require the server remain unavailable; local collection removal and
+  manual download removal still work.
+- On reconnect the banner is replaced briefly by a snackbar and collection sync runs.
+
 ## Failure handling
 
 | Failure | Behaviour |
@@ -130,7 +179,9 @@ a definitive 401 still does. Do not add a separate offline player path.
 - Verify progressive keys are stable across sessions.
 - Verify HLS keys contain no session id or query token.
 - Verify pinned spans survive the streamed cache budget.
-- Verify HLS download attempts are rejected without creating a Room row.
+- Verify single-track HLS attempts are rejected and bulk HLS members remain hidden.
+- Verify collection add/remove, shared references, manual retention, and account mismatch behavior.
+- Verify offline Home, Downloads-first Library, local search, collection detail fallback, and blocked per-track removal.
 - Airplane-mode playback of a progressive download after process restart.
 - Reserve preflight rejection, mid-download pause, and resume after lowering reserve.
 - Storage switch deletes downloads/cache and starts on the new location.
@@ -141,4 +192,5 @@ a definitive 401 still does. Do not add a separate offline player path.
 - Cache identity is `TrackKey`-derived, never session-derived.
 - Downloads are pinned cache entries, not a parallel media store.
 - Offline playback reuses the normal player path.
-- HLS downloads are not implemented in v1.
+- HLS downloads are not implemented in v1; kept collections skip them silently.
+- Kept collections are subscriptions; manual downloads remain independent.

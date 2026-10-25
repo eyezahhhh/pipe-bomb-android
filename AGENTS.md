@@ -35,6 +35,10 @@ same product, not stock Material 3.
   session URL, host, or query token.
 - Downloads are progressive-only until the dedicated server download endpoint exists.
   HLS playback is supported; HLS downloads are rejected in v1.
+- Playlists and albums are kept collections. Their ordered Room snapshots sync every
+  six hours and on app events; membership changes add/release downloads by reference.
+- Offline mode is downloads-first: local collection snapshots and downloaded tracks
+  remain navigable; network-only tabs show intentional placeholders.
 - Downloads are pinned Media3 cache entries. Streamed cache and downloads pause at the
   user-selected free-space reserve; there is no fixed download quota.
 - Changing storage deletes downloads and cached audio and restarts the process.

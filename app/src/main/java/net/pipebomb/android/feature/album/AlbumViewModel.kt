@@ -13,7 +13,12 @@ import net.pipebomb.android.core.model.Playlist
 import net.pipebomb.android.core.model.TrackIdDto
 import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.core.net.userMessage
+import net.pipebomb.android.core.net.ConnectivityStatus
 import net.pipebomb.android.data.CatalogRepository
+import net.pipebomb.android.data.download.DownloadRepository
+import net.pipebomb.android.data.download.DownloadCollectionType
+import net.pipebomb.android.data.download.offlineAlbum
+import net.pipebomb.android.playback.download.CollectionSyncScheduler
 import javax.inject.Inject
 
 data class AlbumUiState(
@@ -25,11 +30,15 @@ data class AlbumUiState(
     val isAddingToPlaylist: String? = null,
     val addToPlaylistError: String? = null,
     val addToPlaylistSuccess: Boolean = false,
+    val isOfflineCopy: Boolean = false,
 )
 
 @HiltViewModel
 class AlbumViewModel @Inject constructor(
     private val catalogRepository: CatalogRepository,
+    private val downloadRepository: DownloadRepository,
+    private val connectivity: ConnectivityStatus,
+    private val collectionSync: CollectionSyncScheduler,
 ) : ViewModel() {
     private val _state = MutableStateFlow(AlbumUiState())
     val state: StateFlow<AlbumUiState> = _state.asStateFlow()
@@ -41,17 +50,33 @@ class AlbumViewModel @Inject constructor(
         albumId = id
         viewModelScope.launch {
             _state.value = AlbumUiState(isLoading = true)
+            if (!connectivity.isOnline.value) {
+                loadOffline(id)
+                return@launch
+            }
             when (val result = catalogRepository.album(id)) {
-                is ApiResult.Failure -> _state.value = AlbumUiState(
-                    isLoading = false,
-                    error = result.userMessage(),
-                )
-
+                is ApiResult.Failure -> loadOffline(id, result.userMessage())
                 is ApiResult.Success -> _state.value = AlbumUiState(
                     isLoading = false,
                     album = result.value,
                 )
             }
+        }
+    }
+
+    private suspend fun loadOffline(id: String, fallbackError: String? = null) {
+        val album = downloadRepository.offlineAlbum(id)
+        _state.value = if (album != null) {
+            AlbumUiState(
+                isLoading = false,
+                album = album,
+                isOfflineCopy = true,
+            )
+        } else {
+            AlbumUiState(
+                isLoading = false,
+                error = fallbackError ?: "This album isn't downloaded. Connect to view it.",
+            )
         }
     }
 
@@ -113,12 +138,17 @@ class AlbumViewModel @Inject constructor(
                     )
                 }
 
-                is ApiResult.Success -> _state.update {
-                    it.copy(
-                        isAddingToPlaylist = null,
-                        addToPlaylistError = null,
-                        addToPlaylistSuccess = true,
+                is ApiResult.Success -> {
+                    collectionSync.syncNow(
+                        DownloadCollectionType.Playlist.collectionId(playlistUuid),
                     )
+                    _state.update {
+                        it.copy(
+                            isAddingToPlaylist = null,
+                            addToPlaylistError = null,
+                            addToPlaylistSuccess = true,
+                        )
+                    }
                 }
             }
         }

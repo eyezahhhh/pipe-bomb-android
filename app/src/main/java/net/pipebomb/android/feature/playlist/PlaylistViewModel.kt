@@ -13,9 +13,12 @@ import net.pipebomb.android.core.model.PlaylistMember
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.User
 import net.pipebomb.android.core.net.ApiResult
+import net.pipebomb.android.core.net.ConnectivityStatus
 import net.pipebomb.android.core.net.userMessage
 import net.pipebomb.android.data.AuthRepository
 import net.pipebomb.android.data.CatalogRepository
+import net.pipebomb.android.data.download.DownloadRepository
+import net.pipebomb.android.data.download.offlinePlaylist
 import net.pipebomb.android.data.SessionState
 import javax.inject.Inject
 
@@ -40,11 +43,14 @@ data class PlaylistUiState(
     val isDeleting: Boolean = false,
     val deleteError: String? = null,
     val deleted: Boolean = false,
+    val isOfflineCopy: Boolean = false,
 )
 
 @HiltViewModel
 class PlaylistViewModel @Inject constructor(
     private val catalogRepository: CatalogRepository,
+    private val downloadRepository: DownloadRepository,
+    private val connectivity: ConnectivityStatus,
     authRepository: AuthRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(PlaylistUiState())
@@ -61,12 +67,12 @@ class PlaylistViewModel @Inject constructor(
         chunksInFlight.clear()
         viewModelScope.launch {
             _state.value = PlaylistUiState(isLoading = true)
+            if (!connectivity.isOnline.value) {
+                loadOffline(playlistUuid)
+                return@launch
+            }
             when (val result = catalogRepository.playlist(playlistUuid)) {
-                is ApiResult.Failure -> _state.value = PlaylistUiState(
-                    isLoading = false,
-                    error = result.userMessage(),
-                )
-
+                is ApiResult.Failure -> loadOffline(playlistUuid, result.userMessage())
                 is ApiResult.Success -> {
                     val playlist = result.value
                     val initial = playlist.tracks.orEmpty()
@@ -82,6 +88,25 @@ class PlaylistViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    private suspend fun loadOffline(playlistUuid: String, fallbackError: String? = null) {
+        val playlist = downloadRepository.offlinePlaylist(playlistUuid)
+        _state.value = if (playlist != null) {
+            val tracks = playlist.tracks.orEmpty()
+            PlaylistUiState(
+                isLoading = false,
+                playlist = playlist,
+                totalCount = tracks.size,
+                tracksByIndex = tracks.mapIndexed { index, entry -> index to entry.track }.toMap(),
+                isOfflineCopy = true,
+            )
+        } else {
+            PlaylistUiState(
+                isLoading = false,
+                error = fallbackError ?: "This playlist isn't downloaded. Connect to view it.",
+            )
         }
     }
 

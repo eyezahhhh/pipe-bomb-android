@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -41,6 +42,22 @@ class ComponentInteractionTest {
     private val tracks = TestFixtures.tracks()
     private val queue = tracks.map { it.key }
     private val tracksByKey = tracks.associateBy { it.key }
+
+    @Test
+    fun mediaActionsDownloadIconInvokesCallback() {
+        var clicks = 0
+        composeRule.setContent {
+            PipeBombTheme {
+                MediaActions(
+                    onPlay = {},
+                    onDownload = { clicks++ },
+                    downloadEnabled = true,
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("Keep downloaded").performClick()
+        composeRule.runOnIdle { assertEquals(1, clicks) }
+    }
 
     @Test
     fun miniPlayerTapOpensPlayer() {

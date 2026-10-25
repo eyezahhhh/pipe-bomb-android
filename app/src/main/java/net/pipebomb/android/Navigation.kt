@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -29,6 +30,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -59,6 +61,8 @@ import net.pipebomb.android.feature.artist.ArtistScreen
 import net.pipebomb.android.feature.downloads.DownloadEffect
 import net.pipebomb.android.feature.downloads.DownloadHostState
 import net.pipebomb.android.feature.downloads.DownloadHostViewModel
+import net.pipebomb.android.data.download.DownloadCollectionItem
+import net.pipebomb.android.data.download.DownloadCollectionType
 import net.pipebomb.android.feature.home.HomeScreen
 import net.pipebomb.android.feature.library.LibraryScreen
 import net.pipebomb.android.feature.playlist.PlaylistScreen
@@ -66,10 +70,12 @@ import net.pipebomb.android.feature.settings.SettingsScreen
 import net.pipebomb.android.feature.player.NowPlayingSheet
 import net.pipebomb.android.feature.player.QueueScreen
 import net.pipebomb.android.feature.search.SearchScreen
+import net.pipebomb.android.ui.components.OfflineBanner
 import net.pipebomb.android.ui.components.PipeBombSnackbarHost
 import net.pipebomb.android.ui.components.TrackContextSheet
 import net.pipebomb.android.ui.playback.MiniPlayer
 import net.pipebomb.android.ui.playback.PlaybackHostViewModel
+import net.pipebomb.android.ui.ConnectivityViewModel
 
 private data class TopLevelTab(
     val route: TopLevelRoute,
@@ -96,7 +102,12 @@ fun MainNavigation() {
     val playbackHost: PlaybackHostViewModel = hiltViewModel()
     val downloadHost: DownloadHostViewModel = hiltViewModel()
     val downloadState by downloadHost.state.collectAsStateWithLifecycle()
+    val connectivity: ConnectivityViewModel = hiltViewModel()
+    val isOnline by connectivity.isOnline.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    var downloadsRequestKey by remember { mutableIntStateOf(0) }
+    var blockedRemovalTitles by remember { mutableStateOf<List<String>?>(null) }
+    var previousOnline by remember { mutableStateOf(isOnline) }
     val currentKey by playbackHost.currentKey.collectAsStateWithLifecycle()
     val playing by playbackHost.isPlaying.collectAsStateWithLifecycle()
 
@@ -104,8 +115,17 @@ fun MainNavigation() {
         downloadHost.effects.collect { effect ->
             when (effect) {
                 is DownloadEffect.Message -> snackbarHostState.showSnackbar(effect.text)
+                is DownloadEffect.BlockedRemoval -> blockedRemovalTitles = effect.collectionTitles
             }
         }
+    }
+    LaunchedEffect(isOnline) {
+        if (!previousOnline && isOnline) {
+            snackbarHostState.showSnackbar("Back online · updating downloads")
+            downloadHost.syncCollections()
+            downloadHost.refresh()
+        }
+        previousOnline = isOnline
     }
 
     fun selectTab(route: TopLevelRoute) {
@@ -121,6 +141,11 @@ fun MainNavigation() {
         backStack.add(route)
     }
 
+    fun openDownloads() {
+        downloadsRequestKey++
+        selectTab(Library)
+    }
+
     fun back() {
         val fromQueue = backStack.lastOrNull() is Queue
         if (backStack.size > 1) {
@@ -134,7 +159,8 @@ fun MainNavigation() {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { PipeBombSnackbarHost(snackbarHostState) },
         topBar = {
-            TopBar(
+            Column {
+                TopBar(
                     title = when (current) {
                         Home -> "Home"
                         Search -> "Search"
@@ -149,7 +175,9 @@ fun MainNavigation() {
                     },
                 canGoBack = backStack.size > 1,
                 onBack = { back() },
-            )
+                )
+                if (!isOnline) OfflineBanner(onOpenDownloads = ::openDownloads)
+            }
         },
         bottomBar = {
             Column {
@@ -275,6 +303,19 @@ fun MainNavigation() {
                         onOpenAlbum = { open(AlbumRoute(it)) },
                         onOpenArtist = { open(ArtistRoute(it)) },
                         onTrackMore = { menuTrack = it },
+                        isOnline = isOnline,
+                        downloads = downloadState.downloads,
+                        collections = downloadState.collections,
+                        onOpenDownloads = {
+                            downloadsRequestKey++
+                            selectTab(Library)
+                        },
+                        onOpenCollection = { collection ->
+                            when (collection.type) {
+                                DownloadCollectionType.Playlist -> open(PlaylistRoute(collection.sourceId))
+                                DownloadCollectionType.Album -> open(AlbumRoute(collection.sourceId))
+                            }
+                        },
                         refreshKey = contentRefreshKey,
                     )
                 }
@@ -286,6 +327,15 @@ fun MainNavigation() {
                         onOpenAlbum = { open(AlbumRoute(it)) },
                         onOpenArtist = { open(ArtistRoute(it)) },
                         onTrackMore = { menuTrack = it },
+                        isOnline = isOnline,
+                        downloads = downloadState.downloads,
+                        collections = downloadState.collections,
+                        onOpenCollection = { collection ->
+                            when (collection.type) {
+                                DownloadCollectionType.Playlist -> open(PlaylistRoute(collection.sourceId))
+                                DownloadCollectionType.Album -> open(AlbumRoute(collection.sourceId))
+                            }
+                        },
                     )
                 }
                 entry<Library> {
@@ -298,12 +348,24 @@ fun MainNavigation() {
                         onOpenPlaylist = { open(PlaylistRoute(it)) },
                         onTrackMore = { menuTrack = it },
                         downloads = downloadState.downloads,
+                        collections = downloadState.collections,
                         storageAvailable = downloadState.storageAvailable,
                         reservePaused = downloadState.reservePaused,
+                        isOnline = isOnline,
+                        downloadsRequestKey = downloadsRequestKey,
+                        accountUuid = downloadState.accountUuid,
+                        accountName = downloadState.accountName,
                         onRetryDownload = downloadHost::retry,
                         onRemoveDownload = downloadHost::remove,
                         onResumeDownloads = downloadHost::resume,
                         onPlayDownload = { playbackHost.playNow(it.key) },
+                        onOpenCollection = { collection ->
+                            when (collection.type) {
+                                DownloadCollectionType.Playlist -> open(PlaylistRoute(collection.sourceId))
+                                DownloadCollectionType.Album -> open(AlbumRoute(collection.sourceId))
+                            }
+                        },
+                        onStopKeepingCollection = downloadHost::stopKeeping,
                         refreshKey = contentRefreshKey,
                     )
                 }
@@ -319,6 +381,14 @@ fun MainNavigation() {
                         onAddToQueue = playbackHost::addTracksToQueue,
                         onOpenArtist = { open(ArtistRoute(it)) },
                         onTrackMore = { menuTrack = it },
+                        downloadCollection = downloadState.byCollection[
+                            DownloadCollectionType.Album.collectionId(route.albumId)
+                        ],
+                        isOnline = isOnline,
+                        downloadBusy = downloadState.bulkInProgress,
+                        onKeepDownloaded = downloadHost::subscribeCollection,
+                        onStopKeeping = downloadHost::stopKeeping,
+                        onSyncCollection = downloadHost::syncCollection,
                     )
                 }
                 entry<ArtistRoute> { route ->
@@ -341,9 +411,20 @@ fun MainNavigation() {
                         onPlayNext = playbackHost::playNextTracks,
                         onAddToQueue = playbackHost::addTracksToQueue,
                         onDeleted = {
+                            downloadState.byCollection[
+                                DownloadCollectionType.Playlist.collectionId(route.playlistUuid)
+                            ]?.let(downloadHost::stopKeeping)
                             contentRefreshKey++
                             back()
                         },
+                        downloadCollection = downloadState.byCollection[
+                            DownloadCollectionType.Playlist.collectionId(route.playlistUuid)
+                        ],
+                        isOnline = isOnline,
+                        downloadBusy = downloadState.bulkInProgress,
+                        onKeepDownloaded = downloadHost::subscribeCollection,
+                        onStopKeeping = downloadHost::stopKeeping,
+                        onSyncCollection = downloadHost::syncCollection,
                     )
                 }
                 entry<TrackRoute> { route -> PlaceholderScreen("Track", route.trackId) }
@@ -362,6 +443,7 @@ fun MainNavigation() {
                     open(ArtistRoute(it))
                 },
                 downloadState = downloadState,
+                isOnline = isOnline,
                 onDownload = downloadHost::start,
                 onRemoveDownload = downloadHost::remove,
             )
@@ -382,10 +464,36 @@ fun MainNavigation() {
                 open(AlbumRoute(it))
             },
             downloadItem = menuTrack?.let { downloadState.byTrack[it.key.toString()] },
-            downloadsAvailable = downloadState.storageAvailable,
+            downloadsAvailable = downloadState.storageAvailable && isOnline,
             onDownload = downloadHost::start,
             onRemoveDownload = downloadHost::remove,
         )
+        blockedRemovalTitles?.let { titles ->
+            AlertDialog(
+                onDismissRequest = { blockedRemovalTitles = null },
+                containerColor = PipeBombTheme.colors.bgElevated,
+                title = {
+                    Text(
+                        text = "Managed by a downloaded collection",
+                        style = PipeBombTheme.typography.sectionHeading,
+                        color = PipeBombTheme.colors.fgPrimary,
+                    )
+                },
+                text = {
+                    Text(
+                        text = "This track is included in ${titles.joinToString(", ") { "\"$it\"" }}. " +
+                            "Stop keeping that collection to remove its downloads.",
+                        style = PipeBombTheme.typography.bodySecondary,
+                        color = PipeBombTheme.colors.fgSecondary,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { blockedRemovalTitles = null }) {
+                        Text("OK", color = PipeBombTheme.colors.accentPrimary)
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -421,6 +529,7 @@ private fun PlayerOverlay(
     onOpenQueue: () -> Unit,
     onOpenArtist: (String) -> Unit,
     downloadState: DownloadHostState,
+    isOnline: Boolean,
     onDownload: (Track) -> Unit,
     onRemoveDownload: (net.pipebomb.android.data.download.DownloadItem) -> Unit,
 ) {
@@ -458,7 +567,7 @@ private fun PlayerOverlay(
         isSaved = isSaved,
         onToggleSave = playbackHost::toggleSaved,
         downloadItem = downloadItem,
-        downloadsAvailable = downloadState.storageAvailable,
+        downloadsAvailable = downloadState.storageAvailable && isOnline,
         onDownload = { track?.let(onDownload) },
         onRemoveDownload = { downloadItem?.let(onRemoveDownload) },
         onOpenArtist = onOpenArtist,

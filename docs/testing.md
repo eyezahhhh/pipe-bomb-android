@@ -39,7 +39,7 @@ reserved for real media/session behaviour and should run nightly or on a label.
 | Track cache | `app/src/test/.../data/TrackCacheTest.kt` | TTL and clearing |
 | Media cache keys | `app/src/test/.../playback/TrackCacheKeyFactoryTest.kt` | stable progressive keys, session-free HLS paths |
 | Offline auth | `app/src/test/.../data/AuthRepositoryTest.kt` | cached user survives network failure |
-| Download metadata | `app/src/test/.../data/download/DownloadRepositoryTest.kt` | enqueue, completion, offline lookup, metadata |
+| Download metadata | `app/src/test/.../data/download/DownloadRepositoryTest.kt` | enqueue, completion, collections, reference counts, blocked removal |
 | Download pins | `app/src/test/.../playback/download/DownloadPinRegistryTest.kt` | track-prefix pinning and unpinning |
 | Download reserve | `app/src/test/.../playback/download/DownloadSpaceTest.kt` | capacity floor and reserve boundary |
 | Playlist windowing | `app/src/test/.../feature/playlist/PlaylistViewModelTest.kt` | first page, lazy chunk, metadata preservation |
@@ -72,7 +72,7 @@ reserved for real media/session behaviour and should run nightly or on a label.
 - Instrumented playback (stream + HLS, background, notification, process restore).
 - Pure queue reducer tests (shuffle/restore, repeat, remove-current).
 - Session-expiry and retry-path tests.
-- Instrumented progressive download, airplane-mode restart, reserve pause/resume, and
-  removable-storage switch.
+- Instrumented progressive download, airplane-mode restart, reserve pause/resume,
+  removable-storage switch, collection sync, and offline collection detail.
 - HLS download rejection integration coverage.
 - Tablet/foldable screenshot variants and Macrobenchmark performance baselines.

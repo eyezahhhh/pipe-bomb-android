@@ -16,12 +16,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,7 +43,11 @@ import net.pipebomb.android.R
 import net.pipebomb.android.core.attributes.AttributeReader
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
+import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.data.download.DownloadCollectionDraft
+import net.pipebomb.android.data.download.DownloadCollectionItem
+import net.pipebomb.android.data.download.DownloadCollectionType
 import net.pipebomb.android.ui.components.MediaActions
 import net.pipebomb.android.ui.components.PipeBombIconButton
 import net.pipebomb.android.ui.components.PipeBombIconButtonSize
@@ -62,14 +68,24 @@ fun AlbumScreen(
     onAddToQueue: (List<TrackKey>) -> Unit,
     onOpenArtist: (String) -> Unit,
     onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
+    downloadCollection: DownloadCollectionItem? = null,
+    isOnline: Boolean = true,
+    downloadBusy: Boolean = false,
+    onKeepDownloaded: (DownloadCollectionDraft, List<Track>) -> Unit = { _, _ -> },
+    onStopKeeping: (DownloadCollectionItem) -> Unit = {},
+    onSyncCollection: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: AlbumViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(albumId) { viewModel.load(albumId) }
+    LaunchedEffect(albumId) {
+        viewModel.load(albumId)
+        onSyncCollection(DownloadCollectionType.Album.collectionId(albumId))
+    }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val album = state.album
     var optionsOpen by remember { mutableStateOf(false) }
     var showPlaylists by remember { mutableStateOf(false) }
+    var showStopDownload by remember { mutableStateOf(false) }
 
     when {
         state.isLoading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -114,9 +130,14 @@ fun AlbumScreen(
                                 text = listOfNotNull(
                                     year?.toString(),
                                     if (tracks.size == 1) "1 track" else "${tracks.size} tracks",
+                                    if (state.isOfflineCopy) "Downloaded copy" else null,
                                 ).joinToString(" · "),
                                 style = PipeBombTheme.typography.metadata,
-                                color = PipeBombTheme.colors.fgTertiary,
+                                color = if (state.isOfflineCopy) {
+                                    PipeBombTheme.colors.accentPrimary
+                                } else {
+                                    PipeBombTheme.colors.fgTertiary
+                                },
                             )
                         }
                     }
@@ -131,12 +152,31 @@ fun AlbumScreen(
                             onShuffle = { onPlay(tracks.shuffled().map { it.key }, 0) },
                             onPlayNext = { onPlayNext(tracks.map { it.key }) },
                             onAddToEnd = { onAddToQueue(tracks.map { it.key }) },
+                            onDownload = {
+                                if (downloadCollection == null) {
+                                    onKeepDownloaded(
+                                        DownloadCollectionDraft(
+                                            type = DownloadCollectionType.Album,
+                                            sourceId = albumId,
+                                            title = DisplayText.title(album),
+                                            artworkUrl = DisplayText.artwork(album)?.url,
+                                            ownerName = DisplayText.artists(album),
+                                        ),
+                                        tracks,
+                                    )
+                                } else {
+                                    showStopDownload = true
+                                }
+                            },
+                            downloadLoading = downloadBusy,
+                            downloadEnabled = isOnline || downloadCollection != null,
+                            isDownloaded = downloadCollection != null,
                             isSaved = album.bookmarked == true,
-                            onToggleSave = viewModel::toggleSave,
+                            onToggleSave = if (isOnline) viewModel::toggleSave else null,
                             enabled = tracks.isNotEmpty(),
                         )
                         Spacer(Modifier.weight(1f))
-                        AlbumOptionsMenu(
+                        if (isOnline) AlbumOptionsMenu(
                             expanded = optionsOpen,
                             onExpandedChange = { optionsOpen = it },
                             onAddToPlaylist = {
@@ -170,6 +210,41 @@ fun AlbumScreen(
                     state = state,
                     onDismiss = { showPlaylists = false },
                     onSelect = viewModel::addToPlaylist,
+                )
+            }
+            if (showStopDownload && downloadCollection != null) {
+                AlertDialog(
+                    onDismissRequest = { showStopDownload = false },
+                    containerColor = PipeBombTheme.colors.bgElevated,
+                    title = {
+                        Text(
+                            text = "Stop keeping this album downloaded?",
+                            style = PipeBombTheme.typography.sectionHeading,
+                            color = PipeBombTheme.colors.fgPrimary,
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "Collection-only tracks will be removed. Tracks downloaded manually or used by another kept collection will remain.",
+                            style = PipeBombTheme.typography.bodySecondary,
+                            color = PipeBombTheme.colors.fgSecondary,
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showStopDownload = false
+                                onStopKeeping(downloadCollection)
+                            },
+                        ) {
+                            Text("Stop keeping", color = PipeBombTheme.colors.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showStopDownload = false }) {
+                            Text("Cancel", color = PipeBombTheme.colors.fgSecondary)
+                        }
+                    },
                 )
             }
         }

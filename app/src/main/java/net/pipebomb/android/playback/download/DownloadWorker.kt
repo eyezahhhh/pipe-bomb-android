@@ -47,55 +47,70 @@ class DownloadWorker @AssistedInject constructor(
         ensureChannel()
         coordinator.awaitReady()
 
+        val reserve = settings.downloadReserveBytes.first()
         if (!storage.resolve().downloadsEnabled || cache.storageState.isFallback) {
             coordinator.pauseUnavailable()
             repository.all()
-                .filter { it.state == DownloadState.Queued.name }
+                .filter {
+                    it.state == DownloadState.Queued.name || it.state == DownloadState.Pending.name
+                }
                 .forEach { repository.markPaused(it.trackKey, "Storage unavailable") }
             return Result.success()
         }
-
-        val reserve = settings.downloadReserveBytes.first()
         if (!DownloadSpace.canStartDownload(storage.selectedAvailableBytes(), reserve)) {
             coordinator.pauseForReserve()
             return Result.success()
         }
 
-        val queued = repository.all().filter { it.state == DownloadState.Queued.name }
-        for (row in queued) {
-            if (!DownloadSpace.canStartDownload(storage.selectedAvailableBytes(), reserve)) {
-                coordinator.pauseForReserve()
-                return Result.success()
-            }
-            val media = when (val result = resolver.resolve(row.key, forceRefresh = true)) {
-                is ApiResult.Failure -> {
-                    repository.markFailed(row.trackKey, result.error.userMessage())
-                    continue
-                }
-
-                is ApiResult.Success -> result.value
-            }
-            if (media.type == ResolvedMedia.MediaType.Hls) {
-                repository.markFailed(row.trackKey, "HLS downloads are not supported yet")
-                continue
-            }
-            repository.updateSource(row.trackKey, media.sessionId, media.url)
-            val request = DownloadRequest.Builder(row.trackKey, Uri.parse(media.url))
-                .setCustomCacheKey("track:${row.trackKey}:stream")
-                .build()
-            coordinator.add(request)
-        }
-
         while (true) {
             coordinator.syncProgress()
-            val rows = repository.all()
+            var rows = repository.all()
+            val preparedIds = coordinator.activeRequestIds().toMutableSet()
+            val candidates = rows.filter {
+                it.state == DownloadState.Pending.name ||
+                    (it.state == DownloadState.Queued.name && it.trackKey !in preparedIds)
+            }
+            for (row in candidates) {
+                if (preparedIds.size >= MAX_PREPARED) break
+                if (coordinator.reservePaused.value) return Result.success()
+                if (!DownloadSpace.canStartDownload(storage.selectedAvailableBytes(), reserve)) {
+                    coordinator.pauseForReserve()
+                    return Result.success()
+                }
+                val media = when (val result = resolver.resolve(row.key, forceRefresh = true)) {
+                    is ApiResult.Failure -> {
+                        repository.markFailed(row.trackKey, result.error.userMessage())
+                        continue
+                    }
+
+                    is ApiResult.Success -> result.value
+                }
+                if (media.type == ResolvedMedia.MediaType.Hls) {
+                    if (row.state == DownloadState.Pending.name) {
+                        repository.markUnsupported(row.trackKey, "HLS downloads are not supported yet")
+                    } else {
+                        repository.markFailed(row.trackKey, "HLS downloads are not supported yet")
+                    }
+                    continue
+                }
+                repository.updateSource(row.trackKey, media.sessionId, media.url)
+                val request = DownloadRequest.Builder(row.trackKey, Uri.parse(media.url))
+                    .setCustomCacheKey("track:${row.trackKey}:stream")
+                    .build()
+                coordinator.add(request)
+                preparedIds += row.trackKey
+            }
+
+            rows = repository.all()
             val active = rows.filter {
                 it.state == DownloadState.Queued.name || it.state == DownloadState.Downloading.name
             }
+            val hiddenPending = rows.count { it.state == DownloadState.Pending.name }
             if (coordinator.reservePaused.value) return Result.success()
             if (!storage.resolve().downloadsEnabled || cache.storageState.isFallback) {
                 coordinator.pauseUnavailable()
-                active.forEach { repository.markPaused(it.trackKey, "Storage unavailable") }
+                active.filter { it.state == DownloadState.Queued.name }
+                    .forEach { repository.markPaused(it.trackKey, "Storage unavailable") }
                 return Result.success()
             }
             if (!DownloadSpace.canStartDownload(storage.selectedAvailableBytes(), reserve)) {
@@ -103,7 +118,9 @@ class DownloadWorker @AssistedInject constructor(
                 return Result.success()
             }
             setForeground(foregroundInfo(rows))
-            if (active.isEmpty() && coordinator.isIdle()) return Result.success()
+            if (active.isEmpty() && hiddenPending == 0 && coordinator.isIdle()) {
+                return Result.success()
+            }
             delay(1_000)
         }
     }
@@ -111,7 +128,9 @@ class DownloadWorker @AssistedInject constructor(
     private fun foregroundInfo(
         rows: List<net.pipebomb.android.data.download.DownloadEntity>,
     ): ForegroundInfo {
-        val total = rows.count { it.state != DownloadState.Failed.name }.coerceAtLeast(1)
+        val total = rows.count {
+            it.state != DownloadState.Failed.name && it.state != DownloadState.Unsupported.name
+        }.coerceAtLeast(1)
         val finished = rows.count { it.state == DownloadState.Completed.name }
         val bytes = rows.sumOf { it.bytesDownloaded }
         val text = if (rows.any { it.state == DownloadState.Downloading.name }) {
@@ -173,6 +192,7 @@ class DownloadWorker @AssistedInject constructor(
 
     private companion object {
         const val CHANNEL_ID = "downloads"
+        const val MAX_PREPARED = 6
         const val NOTIFICATION_ID = 2001
     }
 }

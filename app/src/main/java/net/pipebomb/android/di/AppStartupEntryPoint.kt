@@ -4,6 +4,7 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import net.pipebomb.android.playback.PlaybackReporter
+import net.pipebomb.android.playback.download.CollectionSyncScheduler
 import net.pipebomb.android.playback.download.DownloadCoordinator
 
 @EntryPoint
@@ -11,4 +12,5 @@ import net.pipebomb.android.playback.download.DownloadCoordinator
 interface AppStartupEntryPoint {
     fun playbackReporter(): PlaybackReporter
     fun downloadCoordinator(): DownloadCoordinator
+    fun collectionSyncScheduler(): CollectionSyncScheduler
 }

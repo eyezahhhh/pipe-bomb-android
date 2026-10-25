@@ -11,6 +11,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,7 +27,7 @@ class DownloadRepositoryTest {
             ApplicationProvider.getApplicationContext(),
             DownloadDatabase::class.java,
         ).allowMainThreadQueries().build()
-        repository = DownloadRepository(database.downloadDao())
+        repository = DownloadRepository(database, database.downloadDao())
     }
 
     @After
@@ -70,6 +71,106 @@ class DownloadRepositoryTest {
     }
 
     @Test
+    fun collectionSubscriptionHidesPendingRowsAndReferenceCountsDownloads() = runBlocking {
+        val track = track("track")
+        repository.subscribeCollection(
+            draft = playlistDraft("one"),
+            tracks = listOf(track),
+            accountUuid = "user",
+            accountName = "listener",
+        )
+        repository.subscribeCollection(
+            draft = playlistDraft("two"),
+            tracks = listOf(track),
+            accountUuid = "user",
+            accountName = "listener",
+        )
+
+        assertEquals(DownloadState.Pending.name, repository.get(track.key)?.state)
+        assertTrue(repository.downloads.first().isEmpty())
+
+        assertTrue(repository.unsubscribeCollection("playlist:one").isEmpty())
+        assertNotNull(repository.get(track.key))
+
+        assertEquals(listOf(track.key.toString()), repository.unsubscribeCollection("playlist:two"))
+        assertNull(repository.get(track.key))
+    }
+
+    @Test
+    fun collectionOwnedTrackCannotBeRemovedIndividually() = runBlocking {
+        val track = track("track")
+        repository.subscribeCollection(
+            draft = playlistDraft("one"),
+            tracks = listOf(track),
+            accountUuid = "user",
+            accountName = "listener",
+        )
+        val item = DownloadItem(repository.get(track.key)!!)
+
+        val result = repository.remove(item)
+
+        assertTrue(result is DownloadRemoveResult.Blocked)
+        assertEquals(
+            listOf("Playlist one"),
+            (result as DownloadRemoveResult.Blocked).collectionTitles,
+        )
+        assertNotNull(repository.get(track.key))
+    }
+
+    @Test
+    fun manualDownloadSurvivesCollectionUnsubscribe() = runBlocking {
+        val track = track("track")
+        val media = ResolvedMedia(
+            trackKey = track.key,
+            url = "https://example.test/stream",
+            type = ResolvedMedia.MediaType.Stream,
+            resolvedAt = 1L,
+            sessionId = "session",
+        )
+        repository.enqueue(track, media)
+        repository.subscribeCollection(
+            draft = playlistDraft("one"),
+            tracks = listOf(track),
+            accountUuid = "user",
+            accountName = "listener",
+        )
+
+        repository.unsubscribeCollection("playlist:one")
+
+        assertNotNull(repository.get(track.key))
+        assertTrue(repository.get(track.key)?.manual == true)
+    }
+
+    @Test
+    fun reconcileAddsNewTracksAndReleasesRemovedCollectionTracks() = runBlocking {
+        val first = track("first")
+        val second = track("second")
+        val third = track("third")
+        repository.subscribeCollection(
+            draft = playlistDraft("one"),
+            tracks = listOf(first, second),
+            accountUuid = "user",
+            accountName = "listener",
+        )
+
+        val result = repository.reconcileCollection(
+            collectionId = "playlist:one",
+            title = "Playlist one",
+            artworkUrl = null,
+            ownerName = "listener",
+            accountUuid = "user",
+            accountName = "listener",
+            remoteRevision = "2",
+            tracks = listOf(second, third),
+        )
+
+        assertEquals(listOf(first.key.toString()), result.releasedTrackKeys)
+        assertNull(repository.get(first.key))
+        assertNotNull(repository.get(second.key))
+        assertEquals(DownloadState.Pending.name, repository.get(third.key)?.state)
+    }
+
+    @Test
     fun retryKeepsDisplayMetadataAndResetsProgress() = runBlocking {
         val track = Track(
             trackId = "track",
@@ -108,4 +209,19 @@ class DownloadRepositoryTest {
         assertEquals(0L, retried?.bytesDownloaded)
         assertEquals(null, retried?.lastError)
     }
+
+    private fun track(id: String) = Track(
+        trackId = id,
+        pluginId = "plugin",
+        libraryId = "library",
+        title = "Track $id",
+    )
+
+    private fun playlistDraft(id: String) = DownloadCollectionDraft(
+        type = DownloadCollectionType.Playlist,
+        sourceId = id,
+        title = "Playlist $id",
+        artworkUrl = null,
+        ownerName = "listener",
+    )
 }

@@ -19,6 +19,10 @@ fun MediaActions(
     onShuffle: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
     onAddToEnd: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null,
+    downloadLoading: Boolean = false,
+    downloadEnabled: Boolean = true,
+    isDownloaded: Boolean = false,
     isSaved: Boolean? = null,
     onToggleSave: (() -> Unit)? = null,
     trailing: @Composable () -> Unit = {},
@@ -65,6 +69,19 @@ fun MediaActions(
                 size = PipeBombIconButtonSize.Medium,
                 tone = PipeBombIconButtonTone.Neutral,
                 enabled = enabled,
+            )
+        }
+        onDownload?.let {
+            PipeBombIconButton(
+                icon = ImageVector.vectorResource(
+                    if (isDownloaded) R.drawable.ic_tabler_check_filled else R.drawable.ic_tabler_download,
+                ),
+                contentDescription = if (isDownloaded) "Stop keeping downloaded" else "Keep downloaded",
+                onClick = it,
+                size = PipeBombIconButtonSize.Medium,
+                tone = if (isDownloaded) PipeBombIconButtonTone.Accent else PipeBombIconButtonTone.Neutral,
+                enabled = enabled && downloadEnabled,
+                loading = downloadLoading,
             )
         }
         if (onToggleSave != null) {

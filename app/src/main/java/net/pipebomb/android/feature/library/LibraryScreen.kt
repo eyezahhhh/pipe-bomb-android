@@ -1,5 +1,7 @@
 package net.pipebomb.android.feature.library
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -18,17 +21,27 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
+import net.pipebomb.android.R
 import net.pipebomb.android.core.design.theme.PipeBombTheme
+import net.pipebomb.android.core.model.Resource
 import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.data.download.DownloadCollectionItem
 import net.pipebomb.android.data.download.DownloadItem
 import net.pipebomb.android.ui.components.AlbumRow
 import net.pipebomb.android.ui.components.ArtistRow
 import net.pipebomb.android.ui.components.DownloadRow
+import net.pipebomb.android.ui.components.PipeBombIconButton
+import net.pipebomb.android.ui.components.PipeBombIconButtonTone
+import net.pipebomb.android.ui.components.ResourceImage
 import net.pipebomb.android.ui.components.PipeBombButton
 import net.pipebomb.android.ui.components.PipeBombButtonVariant
 import net.pipebomb.android.ui.components.PipeBombSpinner
@@ -57,6 +70,13 @@ fun LibraryScreen(
     onRemoveDownload: (DownloadItem) -> Unit,
     onResumeDownloads: () -> Unit,
     onPlayDownload: (DownloadItem) -> Unit,
+    collections: List<DownloadCollectionItem>,
+    isOnline: Boolean,
+    downloadsRequestKey: Int,
+    accountUuid: String?,
+    accountName: String?,
+    onOpenCollection: (DownloadCollectionItem) -> Unit,
+    onStopKeepingCollection: (DownloadCollectionItem) -> Unit,
     modifier: Modifier = Modifier,
     refreshKey: Int = 0,
     viewModel: LibraryViewModel = hiltViewModel(),
@@ -68,6 +88,13 @@ fun LibraryScreen(
     val history by viewModel.history.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var selectedSavedTab by rememberSaveable { mutableIntStateOf(0) }
+
+    LaunchedEffect(downloadsRequestKey) {
+        if (downloadsRequestKey > 0) selectedTab = 3
+    }
+    LaunchedEffect(isOnline) {
+        if (!isOnline) selectedTab = 3
+    }
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == 2) viewModel.ensureHistoryLoaded()
@@ -86,7 +113,9 @@ fun LibraryScreen(
             onSelect = { selectedTab = it },
         )
 
-        when (selectedTab) {
+        if (!isOnline && selectedTab != 3) {
+            OfflineLibraryPlaceholder(onOpenDownloads = { selectedTab = 3 })
+        } else when (selectedTab) {
             0 -> {
                 Column(
                     modifier = Modifier.fillMaxSize(),
@@ -151,12 +180,18 @@ fun LibraryScreen(
 
             else -> DownloadsTab(
                 downloads = downloads,
+                collections = collections,
                 storageAvailable = storageAvailable,
                 reservePaused = reservePaused,
+                isOnline = isOnline,
+                accountUuid = accountUuid,
+                accountName = accountName,
                 onRetry = onRetryDownload,
                 onRemove = onRemoveDownload,
                 onResume = onResumeDownloads,
                 onPlay = onPlayDownload,
+                onOpenCollection = onOpenCollection,
+                onStopKeeping = onStopKeepingCollection,
             )
         }
     }
@@ -165,12 +200,18 @@ fun LibraryScreen(
 @Composable
 private fun DownloadsTab(
     downloads: List<DownloadItem>,
+    collections: List<DownloadCollectionItem>,
     storageAvailable: Boolean,
     reservePaused: Boolean,
+    isOnline: Boolean,
+    accountUuid: String?,
+    accountName: String?,
     onRetry: (DownloadItem) -> Unit,
     onRemove: (DownloadItem) -> Unit,
     onResume: () -> Unit,
     onPlay: (DownloadItem) -> Unit,
+    onOpenCollection: (DownloadCollectionItem) -> Unit,
+    onStopKeeping: (DownloadCollectionItem) -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -202,27 +243,178 @@ private fun DownloadsTab(
                 )
             }
         }
-        if (downloads.isEmpty()) {
+        if (collections.isEmpty() && downloads.isEmpty()) {
             EmptyBox("No downloads yet")
         } else {
-            val totalBytes = downloads.sumOf { it.entity.bytesDownloaded }
-            Text(
-                text = "${downloads.size} ${if (downloads.size == 1) "item" else "items"} · " +
-                    formatBytes(totalBytes),
-                style = PipeBombTheme.typography.metadata,
-                color = PipeBombTheme.colors.fgSecondary,
-                modifier = Modifier.padding(horizontal = PipeBombTheme.spacing.xs),
-            )
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
-                items(downloads, key = { it.entity.trackKey }) { item ->
-                    DownloadRow(
-                        item = item,
-                        onPlay = { onPlay(item) },
-                        onRetry = { onRetry(item) },
-                        onRemove = { onRemove(item) },
-                    )
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap),
+            ) {
+                if (collections.isNotEmpty()) {
+                    item { CollectionSectionTitle("Kept playlists & albums") }
+                    items(collections, key = { it.id }) { collection ->
+                        DownloadCollectionRow(
+                            collection = collection,
+                            isOnline = isOnline,
+                            accountUuid = accountUuid,
+                            accountName = accountName,
+                            onOpen = { onOpenCollection(collection) },
+                            onStopKeeping = { onStopKeeping(collection) },
+                        )
+                    }
+                }
+                if (downloads.isNotEmpty()) {
+                    val totalBytes = downloads.sumOf { it.entity.bytesDownloaded }
+                    item {
+                        CollectionSectionTitle(
+                            "${downloads.size} ${if (downloads.size == 1) "track" else "tracks"} · " +
+                                formatBytes(totalBytes),
+                        )
+                    }
+                    items(downloads, key = { it.entity.trackKey }) { item ->
+                        DownloadRow(
+                            item = item,
+                            onPlay = { onPlay(item) },
+                            onRetry = { onRetry(item) },
+                            onRemove = { onRemove(item) },
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CollectionSectionTitle(text: String) {
+    Text(
+        text = text,
+        style = PipeBombTheme.typography.metadata,
+        color = PipeBombTheme.colors.fgSecondary,
+        modifier = Modifier.padding(horizontal = PipeBombTheme.spacing.xs),
+    )
+}
+
+@Composable
+private fun DownloadCollectionRow(
+    collection: DownloadCollectionItem,
+    isOnline: Boolean,
+    accountUuid: String?,
+    accountName: String?,
+    onOpen: () -> Unit,
+    onStopKeeping: () -> Unit,
+) {
+    val colors = PipeBombTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(PipeBombTheme.shapes.small)
+            .clickable(onClick = onOpen)
+            .padding(vertical = PipeBombTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm),
+    ) {
+        ResourceImage(
+            resource = collection.artworkUrl?.let { Resource(url = it) },
+            modifier = Modifier
+                .size(52.dp)
+                .clip(PipeBombTheme.shapes.small)
+                .background(colors.bgElevated),
+        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = collection.title,
+                style = PipeBombTheme.typography.trackTitle,
+                color = colors.fgPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${collection.type.name} · ${collection.downloadedCount}/${collection.memberCount} downloaded",
+                style = PipeBombTheme.typography.metadata,
+                color = colors.fgSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = collectionStatus(
+                    collection = collection,
+                    isOnline = isOnline,
+                    accountUuid = accountUuid,
+                    accountName = accountName,
+                ),
+                style = PipeBombTheme.typography.metadata,
+                color = when {
+                    collection.entity.lastError != null -> colors.warning
+                    !isOnline -> colors.fgTertiary
+                    collection.entity.accountUuid != accountUuid -> colors.warning
+                    else -> colors.fgTertiary
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        PipeBombIconButton(
+            icon = ImageVector.vectorResource(R.drawable.ic_tabler_x),
+            contentDescription = "Stop keeping downloaded",
+            onClick = onStopKeeping,
+            tone = PipeBombIconButtonTone.Neutral,
+        )
+    }
+}
+
+private fun collectionStatus(
+    collection: DownloadCollectionItem,
+    isOnline: Boolean,
+    accountUuid: String?,
+    accountName: String?,
+): String {
+    val entity = collection.entity
+    if (entity.accountUuid != null && entity.accountUuid != accountUuid) {
+        return "Sign in as ${entity.accountName ?: "the owning account"} to update"
+    }
+    if (!isOnline) return "Waiting for connection"
+    entity.lastError?.let { return "Couldn't sync · $it" }
+    val syncedAt = entity.lastSyncedAt
+    return if (syncedAt == null) {
+        "Preparing downloads"
+    } else {
+        "Updated ${relativeTime(syncedAt)}"
+    }
+}
+
+private fun relativeTime(timestamp: Long): String {
+    val minutes = ((System.currentTimeMillis() - timestamp) / 60_000L).coerceAtLeast(0)
+    return when {
+        minutes < 1 -> "just now"
+        minutes < 60 -> "${minutes}m ago"
+        minutes < 1_440 -> "${minutes / 60}h ago"
+        else -> "${minutes / 1_440}d ago"
+    }
+}
+
+@Composable
+private fun OfflineLibraryPlaceholder(onOpenDownloads: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm),
+        ) {
+            Text(
+                text = "Not available offline",
+                style = PipeBombTheme.typography.sectionHeading,
+                color = PipeBombTheme.colors.fgSecondary,
+            )
+            Text(
+                text = "Your downloaded music is still available.",
+                style = PipeBombTheme.typography.metadata,
+                color = PipeBombTheme.colors.fgTertiary,
+            )
+            PipeBombButton(
+                text = "Open Downloads",
+                onClick = onOpenDownloads,
+                variant = PipeBombButtonVariant.Ghost,
+            )
         }
     }
 }
