@@ -74,6 +74,8 @@ class PlaybackController @Inject constructor(
 
     private var originalQueue: List<TrackKey> = emptyList()
     private var retriedFor: String? = null
+    private var externalQueueMode = false
+    private var externalTracks: Map<TrackKey, Track> = emptyMap()
 
     val player: ExoPlayer by lazy {
         ExoPlayer.Builder(context)
@@ -91,6 +93,14 @@ class PlaybackController @Inject constructor(
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         _state.update { it.copy(isPlaying = isPlaying) }
+                    }
+
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        if (!externalQueueMode) return
+                        val index = currentMediaItemIndex
+                        val key = _state.value.queue.getOrNull(index) ?: return
+                        _state.update { it.copy(currentIndex = index) }
+                        externalTracks[key]?.let { _currentTrack.value = it }
                     }
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
@@ -173,6 +183,8 @@ class PlaybackController @Inject constructor(
 
     fun play(keys: List<TrackKey>, startIndex: Int = 0) {
         if (keys.isEmpty()) return
+        externalQueueMode = false
+        externalTracks = emptyMap()
         originalQueue = keys
         _state.update {
             it.copy(
@@ -190,8 +202,37 @@ class PlaybackController @Inject constructor(
     fun playIndex(index: Int) {
         val current = _state.value
         if (index !in current.queue.indices) return
+        if (externalQueueMode && player.mediaItemCount > 1) {
+            player.seekTo(index, 0)
+            return
+        }
         _state.update { it.copy(currentIndex = index, error = null) }
         playCurrent()
+    }
+
+    fun prepareExternalQueue(tracks: List<Track>, startIndex: Int) {
+        if (tracks.isEmpty()) return
+        externalQueueMode = true
+        externalTracks = tracks.associateBy { it.key }
+        val keys = tracks.map { it.key }
+        originalQueue = keys
+        val index = startIndex.coerceIn(keys.indices)
+        _state.update {
+            it.copy(
+                queue = keys,
+                currentIndex = index,
+                shuffle = false,
+                positionMs = 0,
+                durationMs = 0,
+                error = null,
+            )
+        }
+        _currentTrack.value = tracks.getOrNull(index)
+        player.repeatMode = when (_state.value.repeat) {
+            RepeatMode.Off -> Player.REPEAT_MODE_OFF
+            RepeatMode.All -> Player.REPEAT_MODE_ALL
+            RepeatMode.One -> Player.REPEAT_MODE_ONE
+        }
     }
 
     fun addToQueue(keys: List<TrackKey>) {
@@ -222,6 +263,10 @@ class PlaybackController @Inject constructor(
     }
 
     fun next() {
+        if (externalQueueMode && player.mediaItemCount > 1) {
+            player.seekToNextMediaItem()
+            return
+        }
         val queue = _state.value.queue
         if (queue.isEmpty()) return
         val nextIndex = _state.value.currentIndex + 1
@@ -235,6 +280,10 @@ class PlaybackController @Inject constructor(
     }
 
     fun previous() {
+        if (externalQueueMode && player.mediaItemCount > 1) {
+            player.seekToPreviousMediaItem()
+            return
+        }
         if (player.currentPosition > 3_000) {
             player.seekTo(0)
             return
@@ -272,6 +321,11 @@ class PlaybackController @Inject constructor(
                     RepeatMode.One -> RepeatMode.Off
                 },
             )
+        }
+        player.repeatMode = when (_state.value.repeat) {
+            RepeatMode.Off -> Player.REPEAT_MODE_OFF
+            RepeatMode.All -> Player.REPEAT_MODE_ALL
+            RepeatMode.One -> Player.REPEAT_MODE_ONE
         }
     }
 
@@ -316,6 +370,8 @@ class PlaybackController @Inject constructor(
     }
 
     fun clearQueue() {
+        externalQueueMode = false
+        externalTracks = emptyMap()
         player.stop()
         player.clearMediaItems()
         _currentTrack.value = null
@@ -325,6 +381,8 @@ class PlaybackController @Inject constructor(
 
     private fun playCurrent(startPositionMs: Long = 0) {
         val key = _state.value.currentKey ?: return
+        externalQueueMode = false
+        externalTracks = emptyMap()
         scope.launch {
             _state.update { it.copy(isBuffering = true, error = null) }
             withContext(Dispatchers.Main) { player.pause() }

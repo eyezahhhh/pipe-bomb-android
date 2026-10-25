@@ -35,7 +35,7 @@ when its first real file lands; do not commit empty placeholder directories.
 | `core/design/` | Theme, colour/type/shape tokens, shared drawing primitives |
 | `ui/` | App shell, navigation graph, shared Compose components |
 | `data/` | Repositories: auth, catalog, library, playlists, search, history |
-| `playback/` | `MediaSessionService`, resolver, queue, cache, reporter |
+| `playback/` | `MediaLibraryService`, resolver, queue, cache, reporter, Auto browse bridge |
 | `feature/` | Screen-level composables, ViewModels, per-feature UI state |
 
 ## Dependency rules

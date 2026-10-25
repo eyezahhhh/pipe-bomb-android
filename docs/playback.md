@@ -57,6 +57,9 @@ PlaybackController (app layer)
 Modules: `media3-exoplayer`, `media3-exoplayer-hls`, `media3-datasource`
 (contains `CacheDataSource`/`SimpleCache`), `media3-session`, `media3-database`.
 
+Android Auto uses the same player through `MediaLibraryService`; browse-tree and queue
+bridging details live in `android-auto.md`.
+
 - `MediaSessionService` owns the player and publishes the notification.
 - `PlaybackController` is the only API features see: commands in, `StateFlow` out.
 - Audio attributes use `handleAudioFocus = true`; enable

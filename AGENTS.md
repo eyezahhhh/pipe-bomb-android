@@ -13,6 +13,7 @@ same product, not stock Material 3.
 | Building a component or mapping a web component | `./docs/components.md` |
 | Screen patterns, touch adaptation, visual consistency | `./docs/visual-language.md` |
 | Playback, queue, notification, reporting | `./docs/playback.md` |
+| Android Auto, media browse tree, Auto queue bridge | `./docs/android-auto.md` |
 | Caching, offline playback, future downloads | `./docs/caching-and-downloads.md` |
 | API calls, auth, paging | `./docs/api.md` |
 | Metadata, artwork, attribute fallbacks | `./docs/attributes.md` |
