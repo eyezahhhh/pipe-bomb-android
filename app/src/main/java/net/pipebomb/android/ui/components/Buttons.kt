@@ -1,9 +1,17 @@
 package net.pipebomb.android.ui.components
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -16,9 +24,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
@@ -168,28 +181,59 @@ fun PipeBombIconButton(
         PipeBombIconButtonTone.Danger -> colors.error
     }
 
+    val rotation = if (loading) {
+        val transition = rememberInfiniteTransition(label = "iconLoading")
+        val angle by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = 700,
+                    easing = CubicBezierEasing(0.5f, 0.2f, 0.5f, 0.8f),
+                ),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "iconLoadingRotation",
+        )
+        angle
+    } else {
+        0f
+    }
+
     Box(
         modifier = modifier
             .size(size.container)
             .clip(CircleShape)
-            .background(background)
-            .clickable(enabled = enabled && !loading, onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        if (loading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(size.icon),
-                color = tint,
-                strokeWidth = 2.dp,
-            )
-        } else {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                modifier = Modifier.size(size.icon),
-                tint = if (enabled) tint else colors.fgMuted,
-            )
+        Canvas(Modifier.fillMaxSize()) {
+            if (background != Color.Transparent) {
+                val inset = if (loading) 2.dp.toPx() else 0f
+                drawCircle(
+                    color = background,
+                    radius = this.size.minDimension / 2f - inset,
+                )
+            }
+            if (loading) {
+                val stroke = 2.5.dp.toPx()
+                drawArc(
+                    color = if (background == Color.Transparent) colors.accentPrimary else colors.fgPrimary,
+                    startAngle = rotation - 45f,
+                    sweepAngle = 270f,
+                    useCenter = false,
+                    topLeft = Offset(stroke / 2f, stroke / 2f),
+                    size = Size(this.size.width - stroke, this.size.height - stroke),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+            }
         }
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(size.icon),
+            tint = if (enabled) tint else colors.fgMuted,
+        )
     }
 }
 

@@ -280,6 +280,7 @@ private fun NowPlayingContent(
                 onSeek = { onSeek((it * 1000).toLong()) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = track != null,
+                loading = state.isBuffering,
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),

@@ -37,6 +37,11 @@ class PlaybackHostViewModel @Inject constructor(
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), controller.state.value.isPlaying)
 
+    val isBuffering: StateFlow<Boolean> = controller.state
+        .map { it.isBuffering }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), controller.state.value.isBuffering)
+
     private val _saved = MutableStateFlow(false)
     val saved: StateFlow<Boolean> = _saved.asStateFlow()
 

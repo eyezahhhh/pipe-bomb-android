@@ -1,5 +1,11 @@
 package net.pipebomb.android.ui.components
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -22,6 +28,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -61,12 +68,31 @@ fun PipeBombProgressTrack(
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    loading: Boolean = false,
 ) {
     val colors = PipeBombTheme.colors
     val safeMax = max.coerceAtLeast(0f)
     var widthPx by remember { mutableStateOf(1f) }
     var dragging by remember { mutableStateOf(false) }
     val thumbRadius = with(LocalDensity.current) { 6.dp.toPx() }
+    val loadingSweep = if (loading) {
+        val transition = rememberInfiniteTransition(label = "progressLoading")
+        val sweep by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = 1_000,
+                    easing = CubicBezierEasing(0.77f, 0f, 0.36f, 0.99f),
+                ),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "progressLoadingSweep",
+        )
+        sweep
+    } else {
+        0f
+    }
 
     fun seekAt(x: Float) {
         if (!enabled || safeMax <= 0f) return
@@ -116,7 +142,18 @@ fun PipeBombProgressTrack(
                 color = colors.playerProgressTrack,
                 cornerRadius = CornerRadius(radius, radius),
             )
-            if (fraction > 0f) {
+            if (loading && !dragging) {
+                val barWidth = size.width * 0.5f
+                val left = loadingSweep * (size.width - barWidth)
+                clipRect(0f, 0f, size.width, size.height) {
+                    drawRoundRect(
+                        color = colors.playerProgressBuffered,
+                        topLeft = Offset(left, 0f),
+                        size = androidx.compose.ui.geometry.Size(barWidth, size.height),
+                        cornerRadius = CornerRadius(radius, radius),
+                    )
+                }
+            } else if (fraction > 0f) {
                 drawRoundRect(
                     color = colors.playerProgressPlayed,
                     size = androidx.compose.ui.geometry.Size(size.width * fraction, size.height),
@@ -124,7 +161,7 @@ fun PipeBombProgressTrack(
                 )
             }
         }
-        if (enabled && safeMax > 0f) {
+        if (enabled && safeMax > 0f && !(loading && !dragging)) {
             Canvas(Modifier.fillMaxSize()) {
                 val x = (size.width * fraction).coerceIn(thumbRadius, size.width - thumbRadius)
                 drawCircle(

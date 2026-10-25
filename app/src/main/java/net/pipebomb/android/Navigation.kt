@@ -91,6 +91,7 @@ fun MainNavigation() {
     val playbackHost: PlaybackHostViewModel = hiltViewModel()
     val currentKey by playbackHost.currentKey.collectAsStateWithLifecycle()
     val playing by playbackHost.isPlaying.collectAsStateWithLifecycle()
+    val buffering by playbackHost.isBuffering.collectAsStateWithLifecycle()
     val currentTrack by playbackHost.currentTrack.collectAsStateWithLifecycle()
     val isSaved by playbackHost.saved.collectAsStateWithLifecycle()
 
@@ -146,9 +147,11 @@ fun MainNavigation() {
                         MiniPlayer(
                             track = track,
                             isPlaying = playing,
+                            isBuffering = buffering,
                             onOpen = { playerOpen = true },
                             onToggle = playbackHost::toggle,
                             onNext = playbackHost::next,
+                            onPrevious = playbackHost::previousTrack,
                         )
                     }
                 BottomNavigation(
