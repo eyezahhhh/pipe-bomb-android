@@ -4,6 +4,8 @@ plugins {
   alias(libs.plugins.kotlin.serialization)
   alias(libs.plugins.hilt)
   alias(libs.plugins.ksp)
+  alias(libs.plugins.roborazzi)
+  alias(libs.plugins.kover)
 }
 
 android {
@@ -34,6 +36,21 @@ android {
       shaders = false
     }
 
+    testOptions {
+      unitTests {
+        isIncludeAndroidResources = true
+        all {
+          it.jvmArgs(
+            "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "--add-opens=java.base/java.lang=ALL-UNNAMED",
+            "--add-opens=java.base/java.nio=ALL-UNNAMED",
+            "--add-opens=java.base/java.util=ALL-UNNAMED",
+          )
+        }
+      }
+    }
+
     packaging {
       resources {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -48,6 +65,7 @@ kotlin {
 dependencies {
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
+  testImplementation(composeBom)
   androidTestImplementation(composeBom)
 
   // Core Android dependencies
@@ -72,6 +90,13 @@ dependencies {
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.turbine)
+  testImplementation(libs.robolectric)
+  testImplementation(libs.roborazzi)
+  testImplementation(libs.roborazzi.compose)
+  testImplementation(libs.androidx.compose.ui.test.junit4)
+  testImplementation(libs.androidx.test.core)
+  testImplementation(libs.androidx.test.ext.junit)
 
   // Instrumented tests: jUnit rules and runners
   androidTestImplementation(libs.androidx.test.core)

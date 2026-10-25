@@ -41,7 +41,7 @@ same product, not stock Material 3.
 - Cleartext HTTP is allowed only because the user supplies the server URL; warn on
   `http` and never ship a hardcoded plaintext endpoint.
 - Minimum touch target is 48dp even when the web control is visually smaller.
-- Quality gate: `./gradlew lintDebug testDebugUnitTest assembleDebug`.
+- Quality gate: `./gradlew lintDebug verifyRoborazziDebug koverHtmlReportDebug assembleDebug`.
 
 ## Reference material
 

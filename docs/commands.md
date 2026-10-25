@@ -14,9 +14,12 @@ Read when: building, testing, installing, or setting up the Android project.
 | Action | Command |
 | ------ | ------- |
 | Debug APK | `./gradlew assembleDebug` |
-| Unit tests | `./gradlew testDebugUnitTest` |
+| Unit + JVM UI tests | `./gradlew testDebugUnitTest` |
+| Screenshot tests | `./gradlew verifyRoborazziDebug` |
+| Record screenshots | `./gradlew recordRoborazziDebug` |
+| Coverage report | `./gradlew koverHtmlReportDebug` |
 | Lint | `./gradlew lintDebug` |
-| Full gate | `./gradlew lintDebug testDebugUnitTest assembleDebug` |
+| Full gate | `./gradlew lintDebug verifyRoborazziDebug koverHtmlReportDebug assembleDebug` |
 | Install debug | `./gradlew installDebug` |
 | Clean | `./gradlew clean` |
 

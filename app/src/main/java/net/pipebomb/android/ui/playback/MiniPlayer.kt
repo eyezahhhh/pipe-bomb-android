@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,6 +74,7 @@ fun MiniPlayer(
             }
             .clip(PipeBombTheme.shapes.medium)
             .background(PipeBombTheme.colors.bgSurface)
+            .testTag("mini-player")
             .clickable(onClick = onOpen)
             .draggable(
                 orientation = Orientation.Horizontal,
