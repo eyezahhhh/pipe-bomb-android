@@ -65,9 +65,12 @@ action, then content. Album: no artwork in track rows (web uses `noArt`). Artist
 tracks + album shelf. Playlist: owner, visibility, track list with reorder.
 
 **Player**
-Mini player: art, title/artist, play/pause, next. Full player: large art, title,
-artist, seek, transport, shuffle/repeat, save, queue, overflow. Keep the web's control
-order: shuffle, previous, play/pause, next, repeat.
+Mini player: horizontal queue-track pager for art/title/artist, with fixed play/pause.
+Full player: full-width horizontal queue-track pager with neighbouring cover pages,
+large art, title, artist, seek, transport, shuffle/repeat, save, queue. Keep the web's
+control order: shuffle, previous, play/pause, next, repeat.
+- Swipe horizontally anywhere in the player pager to change queue tracks; vertical drag
+  dismisses the sheet. Do not rotate, arc, or scale the artwork during the swipe.
 No fake volume slider on phones; hardware/system volume owns it.
 
 **Queue**

@@ -1,13 +1,7 @@
 package net.pipebomb.android.feature.player
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,25 +15,22 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -50,6 +41,7 @@ import net.pipebomb.android.R
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.Track
+import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.playback.PlaybackUiState
 import net.pipebomb.android.playback.RepeatMode
 import net.pipebomb.android.ui.components.PipeBombIconButton
@@ -58,13 +50,17 @@ import net.pipebomb.android.ui.components.PipeBombIconButtonStyle
 import net.pipebomb.android.ui.components.PipeBombIconButtonTone
 import net.pipebomb.android.ui.components.PipeBombProgressTrack
 import net.pipebomb.android.ui.components.ResourceImage
-import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowPlayingSheet(
     track: Track?,
     state: PlaybackUiState,
+    queue: List<TrackKey>,
+    currentIndex: Int,
+    tracksByKey: Map<TrackKey, Track>,
+    onEnsureTracks: (List<Int>) -> Unit,
+    onSelectIndex: (Int) -> Unit,
     onToggle: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
@@ -102,6 +98,11 @@ fun NowPlayingSheet(
         NowPlayingContent(
             track = track,
             state = state,
+            queue = queue,
+            currentIndex = currentIndex,
+            tracksByKey = tracksByKey,
+            onEnsureTracks = onEnsureTracks,
+            onSelectIndex = onSelectIndex,
             onToggle = onToggle,
             onNext = onNext,
             onPrevious = onPrevious,
@@ -118,10 +119,16 @@ fun NowPlayingSheet(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NowPlayingContent(
     track: Track?,
     state: PlaybackUiState,
+    queue: List<TrackKey>,
+    currentIndex: Int,
+    tracksByKey: Map<TrackKey, Track>,
+    onEnsureTracks: (List<Int>) -> Unit,
+    onSelectIndex: (Int) -> Unit,
     onToggle: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
@@ -136,20 +143,31 @@ private fun NowPlayingContent(
     onOpenArtist: (String) -> Unit,
 ) {
     val colors = PipeBombTheme.colors
-    val density = LocalDensity.current
-    val swipeThreshold = with(density) { 64.dp.toPx() }
-    val maxDrag = with(density) { 150.dp.toPx() }
-    var artOffset by remember { mutableFloatStateOf(0f) }
-    var draggingArt by remember { mutableStateOf(false) }
-    val animatedArtOffset by animateFloatAsState(
-        targetValue = if (draggingArt) artOffset else 0f,
-        animationSpec = if (draggingArt) snap() else spring(dampingRatio = 0.8f, stiffness = 500f),
-        label = "artworkSwipe",
-    )
+    val pageCount = queue.size.coerceAtLeast(1)
+    val initialPage = currentIndex.coerceIn(0, pageCount - 1)
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { pageCount })
+
+    LaunchedEffect(queue.size, currentIndex) {
+        if (queue.isNotEmpty() && pagerState.currentPage != currentIndex) {
+            pagerState.animateScrollToPage(currentIndex)
+        }
+    }
+    LaunchedEffect(pagerState.currentPage) {
+        onEnsureTracks(listOf(pagerState.currentPage - 1, pagerState.currentPage, pagerState.currentPage + 1))
+    }
+    LaunchedEffect(pagerState.settledPage, currentIndex, queue) {
+        if (queue.isNotEmpty() &&
+            pagerState.settledPage != currentIndex &&
+            pagerState.settledPage in queue.indices
+        ) {
+            onSelectIndex(pagerState.settledPage)
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(colors.bgSurface)
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = PipeBombTheme.spacing.lg),
@@ -196,81 +214,34 @@ private fun NowPlayingContent(
             }
         }
 
-        Spacer(Modifier.weight(0.22f))
-
-        if (track != null) {
-            val artistId = track.artists?.firstOrNull()?.artist?.let { it.uuid ?: it.identityKey }
-            ResourceImage(
-                resource = DisplayText.artwork(track),
-                modifier = Modifier
-                    .fillMaxWidth(0.84f)
-                    .aspectRatio(1f)
-                    .graphicsLayer {
-                        translationX = animatedArtOffset
-                        rotationZ = animatedArtOffset / 90f
-                        val scale = 1f - (abs(animatedArtOffset) / maxDrag) * 0.04f
-                        scaleX = scale
-                        scaleY = scale
-                    }
-                    .clip(PipeBombTheme.shapes.large)
-                    .testTag("player-artwork")
-                    .draggable(
-                        orientation = Orientation.Horizontal,
-                        state = rememberDraggableState { delta ->
-                            draggingArt = true
-                            artOffset = (artOffset + delta).coerceIn(-maxDrag, maxDrag)
-                        },
-                        onDragStarted = {
-                            draggingArt = true
-                            artOffset = 0f
-                        },
-                        onDragStopped = { velocity ->
-                            val shouldNext = artOffset < -swipeThreshold || velocity < -900f
-                            val shouldPrevious = artOffset > swipeThreshold || velocity > 900f
-                            draggingArt = false
-                            artOffset = 0f
-                            when {
-                                shouldNext -> onNext()
-                                shouldPrevious -> onSwipePrevious()
-                            }
-                        },
-                    ),
-            )
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(top = PipeBombTheme.spacing.xl),
-            ) {
+        if (queue.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = DisplayText.title(track),
+                    text = "Nothing playing",
                     style = PipeBombTheme.typography.sectionHeading,
-                    color = colors.fgPrimary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    text = DisplayText.artists(track),
-                    style = PipeBombTheme.typography.bodySecondary,
-                    color = colors.fgSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textDecoration = if (artistId != null) TextDecoration.Underline else null,
-                    modifier = if (artistId != null) {
-                        Modifier.clickable { onOpenArtist(artistId) }
-                    } else {
-                        Modifier
-                    },
+                    color = colors.fgTertiary,
                 )
             }
-        } else {
-            Text(
-                text = "Nothing playing",
-                style = PipeBombTheme.typography.sectionHeading,
-                color = colors.fgTertiary,
-            )
+            return@Column
         }
 
-        Spacer(Modifier.weight(0.6f))
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .testTag("player-pager"),
+            beyondViewportPageCount = 1,
+        ) { page ->
+            val pageKey = queue[page]
+            val pageTrack = tracksByKey[pageKey]
+                ?: track?.takeIf { page == currentIndex }
+            LaunchedEffect(page) { onEnsureTracks(listOf(page)) }
+            PlayerPage(
+                track = pageTrack,
+                onOpenArtist = onOpenArtist,
+            )
+        }
 
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -357,8 +328,57 @@ private fun NowPlayingContent(
                 modifier = Modifier.padding(bottom = PipeBombTheme.spacing.sm),
             )
         }
+    }
+}
 
-        Spacer(Modifier.weight(0.7f))
+@Composable
+private fun PlayerPage(
+    track: Track?,
+    onOpenArtist: (String) -> Unit,
+) {
+    val colors = PipeBombTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        ResourceImage(
+            resource = track?.let { DisplayText.artwork(it) },
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .aspectRatio(1f)
+                .clip(PipeBombTheme.shapes.large),
+        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(top = PipeBombTheme.spacing.xl),
+        ) {
+            Text(
+                text = track?.let { DisplayText.title(it) } ?: "Loading…",
+                style = PipeBombTheme.typography.sectionHeading,
+                color = if (track == null) colors.fgTertiary else colors.fgPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+            if (track != null) {
+                val artistId = track.artists?.firstOrNull()?.artist?.let { it.uuid ?: it.identityKey }
+                Text(
+                    text = DisplayText.artists(track),
+                    style = PipeBombTheme.typography.bodySecondary,
+                    color = colors.fgSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (artistId != null) TextDecoration.Underline else null,
+                    modifier = if (artistId != null) {
+                        Modifier.clickable { onOpenArtist(artistId) }
+                    } else {
+                        Modifier
+                    },
+                )
+            }
+        }
     }
 }
 

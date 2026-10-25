@@ -40,7 +40,7 @@ reserved for real media/session behaviour and should run nightly or on a label.
 | Media cache keys | `app/src/test/.../playback/TrackCacheKeyFactoryTest.kt` | per-track/session identity, HLS segments |
 | Playlist windowing | `app/src/test/.../feature/playlist/PlaylistViewModelTest.kt` | first page, lazy chunk, metadata preservation |
 | History windowing | `app/src/test/.../feature/library/LibraryViewModelTest.kt` | lazy load, page mapping, no duplicate chunks |
-| Component interaction | `app/src/test/.../ui/interaction/ComponentInteractionTest.kt` | mini-player swipes/tap/buffering, track long-press, player artwork swipes |
+| Component interaction | `app/src/test/.../ui/interaction/ComponentInteractionTest.kt` | mini-player pager swipes/tap/buffering, track long-press, full-player pager swipes |
 | Visual goldens | `app/src/test/.../ui/screenshot/ComponentScreenshotTest.kt` | track rows, mini player, player sheet, design tokens |
 
 ## Fixtures and determinism

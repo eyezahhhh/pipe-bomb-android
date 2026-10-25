@@ -78,15 +78,18 @@ class ComponentScreenshotTest {
 
     @Test
     fun miniPlayer() {
+        val tracks = TestFixtures.tracks()
         componentCanvas {
             MiniPlayer(
-                track = TestFixtures.track(),
+                queue = tracks.map { it.key },
+                currentIndex = 1,
+                tracksByKey = tracks.associateBy { it.key },
                 isPlaying = true,
                 isBuffering = false,
                 onOpen = {},
                 onToggle = {},
-                onNext = {},
-                onPrevious = {},
+                onSelectIndex = {},
+                onEnsureTracks = {},
             )
         }
         composeRule.onRoot().captureRoboImage("src/test/screenshots/mini-player.png")
@@ -94,15 +97,18 @@ class ComponentScreenshotTest {
 
     @Test
     fun miniPlayerBuffering() {
+        val tracks = TestFixtures.tracks()
         componentCanvas {
             MiniPlayer(
-                track = TestFixtures.track(),
+                queue = tracks.map { it.key },
+                currentIndex = 1,
+                tracksByKey = tracks.associateBy { it.key },
                 isPlaying = true,
                 isBuffering = true,
                 onOpen = {},
                 onToggle = {},
-                onNext = {},
-                onPrevious = {},
+                onSelectIndex = {},
+                onEnsureTracks = {},
             )
         }
         composeRule.onRoot().captureRoboImage("src/test/screenshots/mini-player-buffering.png")
@@ -118,11 +124,17 @@ class ComponentScreenshotTest {
 
     @Test
     fun nowPlaying() {
+        val tracks = TestFixtures.tracks()
         composeRule.setContent {
             PipeBombTheme {
                 NowPlayingSheet(
-                    track = TestFixtures.track(),
+                    track = tracks[1],
                     state = TestFixtures.playback(),
+                    queue = tracks.map { it.key },
+                    currentIndex = 1,
+                    tracksByKey = tracks.associateBy { it.key },
+                    onEnsureTracks = {},
+                    onSelectIndex = {},
                     onToggle = {},
                     onNext = {},
                     onPrevious = {},
@@ -141,11 +153,17 @@ class ComponentScreenshotTest {
 
     @Test
     fun nowPlayingBuffering() {
+        val tracks = TestFixtures.tracks()
         composeRule.setContent {
             PipeBombTheme {
                 NowPlayingSheet(
-                    track = TestFixtures.track(),
+                    track = tracks[1],
                     state = TestFixtures.playback(isBuffering = true),
+                    queue = tracks.map { it.key },
+                    currentIndex = 1,
+                    tracksByKey = tracks.associateBy { it.key },
+                    onEnsureTracks = {},
+                    onSelectIndex = {},
                     onToggle = {},
                     onNext = {},
                     onPrevious = {},

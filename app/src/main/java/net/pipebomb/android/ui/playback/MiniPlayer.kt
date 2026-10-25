@@ -1,33 +1,25 @@
 package net.pipebomb.android.ui.playback
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,93 +28,115 @@ import net.pipebomb.android.R
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.Track
+import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.ui.components.PipeBombIconButton
 import net.pipebomb.android.ui.components.PipeBombIconButtonStyle
 import net.pipebomb.android.ui.components.ResourceImage
-import kotlin.math.abs
 
 @Composable
 fun MiniPlayer(
-    track: Track,
+    queue: List<TrackKey>,
+    currentIndex: Int,
+    tracksByKey: Map<TrackKey, Track>,
     isPlaying: Boolean,
     isBuffering: Boolean,
     onOpen: () -> Unit,
     onToggle: () -> Unit,
-    onNext: () -> Unit,
-    onPrevious: () -> Unit,
+    onSelectIndex: (Int) -> Unit,
+    onEnsureTracks: (List<Int>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    val maxDrag = with(density) { 64.dp.toPx() }
-    val swipeThreshold = with(density) { 40.dp.toPx() }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var dragging by remember { mutableStateOf(false) }
-    val displayedOffset by animateFloatAsState(
-        targetValue = if (dragging) dragOffset else 0f,
-        animationSpec = if (dragging) snap() else spring(dampingRatio = 0.8f, stiffness = 500f),
-        label = "miniPlayerSwipe",
+    val pageCount = queue.size.coerceAtLeast(1)
+    val pagerState = rememberPagerState(
+        initialPage = currentIndex.coerceIn(0, pageCount - 1),
+        pageCount = { pageCount },
     )
+
+    LaunchedEffect(queue.size, currentIndex) {
+        if (queue.isNotEmpty() && pagerState.currentPage != currentIndex) {
+            pagerState.animateScrollToPage(currentIndex)
+        }
+    }
+    LaunchedEffect(pagerState.currentPage) {
+        onEnsureTracks(listOf(pagerState.currentPage - 1, pagerState.currentPage, pagerState.currentPage + 1))
+    }
+    LaunchedEffect(pagerState.settledPage, currentIndex, queue) {
+        if (queue.isNotEmpty() &&
+            pagerState.settledPage != currentIndex &&
+            pagerState.settledPage in queue.indices
+        ) {
+            onSelectIndex(pagerState.settledPage)
+        }
+    }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = PipeBombTheme.spacing.sm, vertical = PipeBombTheme.spacing.xs)
             .height(64.dp)
-            .graphicsLayer {
-                translationX = displayedOffset
-                alpha = 1f - (abs(displayedOffset) / maxDrag) * 0.15f
-            }
             .clip(PipeBombTheme.shapes.medium)
             .background(PipeBombTheme.colors.bgSurface)
             .testTag("mini-player")
-            .clickable(onClick = onOpen)
-            .draggable(
-                orientation = Orientation.Horizontal,
-                state = rememberDraggableState { delta ->
-                    dragging = true
-                    dragOffset = (dragOffset + delta).coerceIn(-maxDrag, maxDrag)
-                },
-                onDragStarted = {
-                    dragging = true
-                    dragOffset = 0f
-                },
-                onDragStopped = { velocity ->
-                    val shouldNext = dragOffset < -swipeThreshold || velocity < -900f
-                    val shouldPrevious = dragOffset > swipeThreshold || velocity > 900f
-                    dragging = false
-                    dragOffset = 0f
-                    when {
-                        shouldNext -> onNext()
-                        shouldPrevious -> onPrevious()
-                    }
-                },
-            )
             .padding(horizontal = PipeBombTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm),
     ) {
-        ResourceImage(
-            resource = DisplayText.artwork(track),
-            modifier = Modifier.size(48.dp).clip(PipeBombTheme.shapes.small),
-        )
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = DisplayText.title(track),
-                style = PipeBombTheme.typography.trackTitle,
-                color = PipeBombTheme.colors.fgPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = DisplayText.artists(track),
-                style = PipeBombTheme.typography.metadata,
-                color = PipeBombTheme.colors.fgSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        if (queue.isEmpty()) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                Text(
+                    text = "Nothing playing",
+                    style = PipeBombTheme.typography.bodySecondary,
+                    color = PipeBombTheme.colors.fgTertiary,
+                )
+            }
+        } else {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .testTag("mini-player-pager"),
+                beyondViewportPageCount = 1,
+            ) { page ->
+                val pageTrack = tracksByKey[queue[page]]
+                LaunchedEffect(page) { onEnsureTracks(listOf(page)) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight()
+                        .clickable(onClick = onOpen),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm),
+                ) {
+                    ResourceImage(
+                        resource = pageTrack?.let { DisplayText.artwork(it) },
+                        modifier = Modifier.size(48.dp).clip(PipeBombTheme.shapes.small),
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = pageTrack?.let { DisplayText.title(it) } ?: "Loading…",
+                            style = PipeBombTheme.typography.trackTitle,
+                            color = if (pageTrack == null) {
+                                PipeBombTheme.colors.fgTertiary
+                            } else {
+                                PipeBombTheme.colors.fgPrimary
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = pageTrack?.let { DisplayText.artists(it) }.orEmpty(),
+                            style = PipeBombTheme.typography.metadata,
+                            color = PipeBombTheme.colors.fgSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
         }
         PipeBombIconButton(
             icon = ImageVector.vectorResource(

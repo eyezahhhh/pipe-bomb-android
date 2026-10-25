@@ -1,6 +1,9 @@
 package net.pipebomb.android.ui.interaction
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasStateDescription
@@ -33,74 +36,49 @@ class ComponentInteractionTest {
     @get:Rule
     val composeRule = createComposeRule()
 
+    private val tracks = TestFixtures.tracks()
+    private val queue = tracks.map { it.key }
+    private val tracksByKey = tracks.associateBy { it.key }
+
     @Test
     fun miniPlayerTapOpensPlayer() {
         var opened = 0
-        composeRule.setContent {
-            PipeBombTheme {
-                MiniPlayer(
-                    track = TestFixtures.track(),
-                    isPlaying = true,
-                    isBuffering = false,
-                    onOpen = { opened++ },
-                    onToggle = {},
-                    onNext = {},
-                    onPrevious = {},
-                )
-            }
-        }
-
-        composeRule.onNodeWithTag("mini-player").performClick()
+        setMiniPlayer(onOpen = { opened++ })
+        composeRule.onNodeWithTag("mini-player-pager").performClick()
         composeRule.runOnIdle { assertEquals(1, opened) }
     }
 
     @Test
-    fun miniPlayerSwipesChangeTracks() {
-        var next = 0
-        var previous = 0
-        composeRule.setContent {
-            PipeBombTheme {
-                MiniPlayer(
-                    track = TestFixtures.track(),
-                    isPlaying = true,
-                    isBuffering = false,
-                    onOpen = {},
-                    onToggle = {},
-                    onNext = { next++ },
-                    onPrevious = { previous++ },
-                )
-            }
-        }
+    fun miniPlayerSwipeSelectsNextTrack() {
+        var selected = -1
+        setMiniPlayer(onSelectIndex = { selected = it })
 
-        composeRule.onNodeWithTag("mini-player").performTouchInput { swipeLeft() }
+        composeRule.onNodeWithTag("mini-player-pager").performTouchInput { swipeLeft() }
+        composeRule.mainClock.advanceTimeBy(1_500)
         composeRule.waitForIdle()
-        composeRule.runOnIdle { assertEquals(1, next) }
 
-        composeRule.onNodeWithTag("mini-player").performTouchInput { swipeRight() }
+        composeRule.runOnIdle { assertEquals(2, selected) }
+    }
+
+    @Test
+    fun miniPlayerSwipeSelectsPreviousTrack() {
+        var selected = -1
+        setMiniPlayer(onSelectIndex = { selected = it })
+
+        composeRule.onNodeWithTag("mini-player-pager").performTouchInput { swipeRight() }
+        composeRule.mainClock.advanceTimeBy(1_500)
         composeRule.waitForIdle()
-        composeRule.runOnIdle { assertEquals(1, previous) }
+
+        composeRule.runOnIdle { assertEquals(0, selected) }
     }
 
     @Test
     fun miniPlayerExposesBufferingState() {
-        composeRule.setContent {
-            PipeBombTheme {
-                MiniPlayer(
-                    track = TestFixtures.track(),
-                    isPlaying = true,
-                    isBuffering = true,
-                    onOpen = {},
-                    onToggle = {},
-                    onNext = {},
-                    onPrevious = {},
-                )
-            }
-        }
-
+        setMiniPlayer(isBuffering = true)
         composeRule.onNode(hasStateDescription("Loading")).assertIsDisplayed()
     }
 
-    
+    @Test
     fun trackRowTapPlays() {
         var clicked = 0
         composeRule.setContent {
@@ -141,19 +119,26 @@ class ComponentInteractionTest {
     }
 
     @Test
-    fun playerArtworkSwipesChangeTracks() {
-        var next = 0
-        var previous = 0
+    fun playerPagerSwipeSelectsAdjacentTracks() {
+        var selected = -1
+        var currentIndex by mutableIntStateOf(1)
         composeRule.setContent {
             PipeBombTheme {
                 Box(Modifier) {
                     NowPlayingSheet(
-                        track = TestFixtures.track(),
+                        track = tracks[1],
                         state = TestFixtures.playback(),
+                        queue = queue,
+                        currentIndex = currentIndex,
+                        tracksByKey = tracksByKey,
+                        onEnsureTracks = {},
+                        onSelectIndex = {
+                            selected = it
+                            currentIndex = it
+                        },
                         onToggle = {},
-                        onNext = { next++ },
+                        onNext = {},
                         onPrevious = {},
-                        onSwipePrevious = { previous++ },
                         onSeek = {},
                         onShuffle = {},
                         onRepeat = {},
@@ -166,12 +151,36 @@ class ComponentInteractionTest {
         composeRule.mainClock.advanceTimeBy(1_000)
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag("player-artwork").performTouchInput { swipeLeft() }
+        composeRule.onNodeWithTag("player-pager").performTouchInput { swipeLeft() }
+        composeRule.mainClock.advanceTimeBy(1_500)
         composeRule.waitForIdle()
-        composeRule.runOnIdle { assertEquals(1, next) }
+        composeRule.runOnIdle { assertEquals(2, selected) }
 
-        composeRule.onNodeWithTag("player-artwork").performTouchInput { swipeRight() }
+        composeRule.onNodeWithTag("player-pager").performTouchInput { swipeRight() }
+        composeRule.mainClock.advanceTimeBy(1_500)
         composeRule.waitForIdle()
-        composeRule.runOnIdle { assertEquals(1, previous) }
+        composeRule.runOnIdle { assertEquals(1, selected) }
+    }
+
+    private fun setMiniPlayer(
+        isBuffering: Boolean = false,
+        onOpen: () -> Unit = {},
+        onSelectIndex: (Int) -> Unit = {},
+    ) {
+        composeRule.setContent {
+            PipeBombTheme {
+                MiniPlayer(
+                    queue = queue,
+                    currentIndex = 1,
+                    tracksByKey = tracksByKey,
+                    isPlaying = true,
+                    isBuffering = isBuffering,
+                    onOpen = onOpen,
+                    onToggle = {},
+                    onSelectIndex = onSelectIndex,
+                    onEnsureTracks = {},
+                )
+            }
+        }
     }
 }

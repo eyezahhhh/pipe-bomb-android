@@ -11,12 +11,13 @@ import net.pipebomb.android.playback.RepeatMode
 
 object TestFixtures {
     fun track(
+        id: String = "track-1",
         title: String = "Midnight Drive",
         artist: String = "Nova",
         durationSeconds: Double = 245.0,
     ): Track = Track(
-        uuid = "track-uuid",
-        trackId = "track-1",
+        uuid = "uuid-",
+        trackId = id,
         pluginId = "demo",
         libraryId = "demo",
         title = title,
@@ -38,6 +39,13 @@ object TestFixtures {
             ),
         ),
     )
+
+    fun tracks(count: Int = 3): List<Track> = (0 until count).map { index ->
+        track(
+            id = "track-$index",
+            title = if (index == 1) "Midnight Drive" else "Track $index",
+        )
+    }
 
     fun playback(
         isPlaying: Boolean = true,

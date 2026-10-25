@@ -187,6 +187,13 @@ class PlaybackController @Inject constructor(
 
     fun playNow(key: TrackKey) = play(listOf(key), 0)
 
+    fun playIndex(index: Int) {
+        val current = _state.value
+        if (index !in current.queue.indices) return
+        _state.update { it.copy(currentIndex = index, error = null) }
+        playCurrent()
+    }
+
     fun addToQueue(keys: List<TrackKey>) {
         if (keys.isEmpty()) return
         _state.update { it.copy(queue = it.queue + keys) }

@@ -92,6 +92,8 @@ fun MainNavigation() {
     val currentKey by playbackHost.currentKey.collectAsStateWithLifecycle()
     val playing by playbackHost.isPlaying.collectAsStateWithLifecycle()
     val buffering by playbackHost.isBuffering.collectAsStateWithLifecycle()
+    val queueState by playbackHost.queueState.collectAsStateWithLifecycle()
+    val queueTracks by playbackHost.queueTracks.collectAsStateWithLifecycle()
     val currentTrack by playbackHost.currentTrack.collectAsStateWithLifecycle()
     val isSaved by playbackHost.saved.collectAsStateWithLifecycle()
 
@@ -143,15 +145,17 @@ fun MainNavigation() {
         },
         bottomBar = {
             Column {
-                    currentTrack?.let { track ->
+                    if (currentTrack != null) {
                         MiniPlayer(
-                            track = track,
+                            queue = queueState.queue,
+                            currentIndex = queueState.currentIndex,
+                            tracksByKey = queueTracks,
                             isPlaying = playing,
                             isBuffering = buffering,
                             onOpen = { playerOpen = true },
                             onToggle = playbackHost::toggle,
-                            onNext = playbackHost::next,
-                            onPrevious = playbackHost::previousTrack,
+                            onSelectIndex = playbackHost::playIndex,
+                            onEnsureTracks = playbackHost::ensureQueueTracks,
                         )
                     }
                 BottomNavigation(
@@ -340,10 +344,14 @@ fun MainNavigation() {
             NowPlayingSheet(
                 track = currentTrack,
                 state = playbackState,
+                queue = queueState.queue,
+                currentIndex = queueState.currentIndex,
+                tracksByKey = queueTracks,
+                onEnsureTracks = playbackHost::ensureQueueTracks,
+                onSelectIndex = playbackHost::playIndex,
                 onToggle = playbackHost::toggle,
                 onNext = playbackHost::next,
                 onPrevious = playbackHost::previous,
-                onSwipePrevious = playbackHost::previousTrack,
                 onSeek = playbackHost::seekTo,
                 onShuffle = playbackHost::toggleShuffle,
                 onRepeat = playbackHost::cycleRepeat,
