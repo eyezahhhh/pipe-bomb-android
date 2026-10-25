@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -51,25 +52,39 @@ class ComponentInteractionTest {
     @Test
     fun miniPlayerSwipeSelectsNextTrack() {
         var selected = -1
-        setMiniPlayer(onSelectIndex = { selected = it })
+        var selectedCount = 0
+        setMiniPlayer(onSelectIndex = {
+            selected = it
+            selectedCount++
+        })
 
         composeRule.onNodeWithTag("mini-player-pager").performTouchInput { swipeLeft() }
         composeRule.mainClock.advanceTimeBy(1_500)
         composeRule.waitForIdle()
 
-        composeRule.runOnIdle { assertEquals(2, selected) }
+        composeRule.runOnIdle {
+            assertEquals(2, selected)
+            assertEquals(1, selectedCount)
+        }
     }
 
     @Test
     fun miniPlayerSwipeSelectsPreviousTrack() {
         var selected = -1
-        setMiniPlayer(onSelectIndex = { selected = it })
+        var selectedCount = 0
+        setMiniPlayer(onSelectIndex = {
+            selected = it
+            selectedCount++
+        })
 
         composeRule.onNodeWithTag("mini-player-pager").performTouchInput { swipeRight() }
         composeRule.mainClock.advanceTimeBy(1_500)
         composeRule.waitForIdle()
 
-        composeRule.runOnIdle { assertEquals(0, selected) }
+        composeRule.runOnIdle {
+            assertEquals(0, selected)
+            assertEquals(1, selectedCount)
+        }
     }
 
     @Test
@@ -116,6 +131,53 @@ class ComponentInteractionTest {
 
         composeRule.onNodeWithText("Midnight Drive").performTouchInput { longClick() }
         composeRule.runOnIdle { assertTrue(more > 0) }
+    }
+
+
+    fun playerPagerPartialSwipeDoesNotSelect() {
+        var selected = -1
+        var selectedCount = 0
+        composeRule.setContent {
+            PipeBombTheme {
+                Box(Modifier) {
+                    NowPlayingSheet(
+                        track = tracks[1],
+                        state = TestFixtures.playback(),
+                        queue = queue,
+                        currentIndex = 1,
+                        tracksByKey = tracksByKey,
+                        onEnsureTracks = {},
+                        onSelectIndex = {
+                            selected = it
+                            selectedCount++
+                        },
+                        onToggle = {},
+                        onNext = {},
+                        onPrevious = {},
+                        onSeek = {},
+                        onShuffle = {},
+                        onRepeat = {},
+                        onOpenQueue = {},
+                        onDismiss = {},
+                    )
+                }
+            }
+        }
+        composeRule.mainClock.advanceTimeBy(1_000)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("player-pager").performTouchInput {
+            down(center)
+            moveBy(Offset(-80f, 0f))
+            up()
+        }
+        composeRule.mainClock.advanceTimeBy(1_500)
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle {
+            assertEquals(-1, selected)
+            assertEquals(0, selectedCount)
+        }
     }
 
     @Test

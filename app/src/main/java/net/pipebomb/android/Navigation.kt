@@ -91,15 +91,6 @@ fun MainNavigation() {
     val playbackHost: PlaybackHostViewModel = hiltViewModel()
     val currentKey by playbackHost.currentKey.collectAsStateWithLifecycle()
     val playing by playbackHost.isPlaying.collectAsStateWithLifecycle()
-    val buffering by playbackHost.isBuffering.collectAsStateWithLifecycle()
-    val queueState by playbackHost.queueState.collectAsStateWithLifecycle()
-    val queueTracks by playbackHost.queueTracks.collectAsStateWithLifecycle()
-    val currentTrack by playbackHost.currentTrack.collectAsStateWithLifecycle()
-    val isSaved by playbackHost.saved.collectAsStateWithLifecycle()
-
-    LaunchedEffect(currentTrack) {
-        if (currentTrack == null) playerOpen = false
-    }
 
     fun selectTab(route: TopLevelRoute) {
         if (selectedTab == route && backStack.size == 1) return
@@ -145,19 +136,10 @@ fun MainNavigation() {
         },
         bottomBar = {
             Column {
-                    if (currentTrack != null) {
-                        MiniPlayer(
-                            queue = queueState.queue,
-                            currentIndex = queueState.currentIndex,
-                            tracksByKey = queueTracks,
-                            isPlaying = playing,
-                            isBuffering = buffering,
-                            onOpen = { playerOpen = true },
-                            onToggle = playbackHost::toggle,
-                            onSelectIndex = playbackHost::playIndex,
-                            onEnsureTracks = playbackHost::ensureQueueTracks,
-                        )
-                    }
+                    MiniPlayerHost(
+                        playbackHost = playbackHost,
+                        onOpen = { playerOpen = true },
+                    )
                 BottomNavigation(
                     tabs = tabs,
                     selected = selectedTab,
@@ -340,28 +322,13 @@ fun MainNavigation() {
             },
         )
         if (playerOpen) {
-            val playbackState by playbackHost.state.collectAsStateWithLifecycle()
-            NowPlayingSheet(
-                track = currentTrack,
-                state = playbackState,
-                queue = queueState.queue,
-                currentIndex = queueState.currentIndex,
-                tracksByKey = queueTracks,
-                onEnsureTracks = playbackHost::ensureQueueTracks,
-                onSelectIndex = playbackHost::playIndex,
-                onToggle = playbackHost::toggle,
-                onNext = playbackHost::next,
-                onPrevious = playbackHost::previous,
-                onSeek = playbackHost::seekTo,
-                onShuffle = playbackHost::toggleShuffle,
-                onRepeat = playbackHost::cycleRepeat,
+            PlayerOverlay(
+                playbackHost = playbackHost,
+                onDismiss = { playerOpen = false },
                 onOpenQueue = {
                     playerOpen = false
                     open(Queue)
                 },
-                onDismiss = { playerOpen = false },
-                isSaved = isSaved,
-                onToggleSave = playbackHost::toggleSaved,
                 onOpenArtist = {
                     playerOpen = false
                     open(ArtistRoute(it))
@@ -387,6 +354,73 @@ fun MainNavigation() {
     }
 }
 
+@Composable
+private fun MiniPlayerHost(
+    playbackHost: PlaybackHostViewModel,
+    onOpen: () -> Unit,
+) {
+    val currentTrack by playbackHost.currentTrack.collectAsStateWithLifecycle()
+    if (currentTrack == null) return
+    val queueState by playbackHost.queueState.collectAsStateWithLifecycle()
+    val tracksByKey by playbackHost.queueTracks.collectAsStateWithLifecycle()
+    val isPlaying by playbackHost.isPlaying.collectAsStateWithLifecycle()
+    val isBuffering by playbackHost.isBuffering.collectAsStateWithLifecycle()
+
+    MiniPlayer(
+        queue = queueState.queue,
+        currentIndex = queueState.currentIndex,
+        tracksByKey = tracksByKey,
+        isPlaying = isPlaying,
+        isBuffering = isBuffering,
+        onOpen = onOpen,
+        onToggle = playbackHost::toggle,
+        onSelectIndex = playbackHost::playIndex,
+        onEnsureTracks = playbackHost::ensureQueueTracks,
+    )
+}
+
+@Composable
+private fun PlayerOverlay(
+    playbackHost: PlaybackHostViewModel,
+    onDismiss: () -> Unit,
+    onOpenQueue: () -> Unit,
+    onOpenArtist: (String) -> Unit,
+) {
+    val track by playbackHost.currentTrack.collectAsStateWithLifecycle()
+    val playbackState by playbackHost.state.collectAsStateWithLifecycle()
+    val queueState by playbackHost.queueState.collectAsStateWithLifecycle()
+    val tracksByKey by playbackHost.queueTracks.collectAsStateWithLifecycle()
+    val saved by playbackHost.saved.collectAsStateWithLifecycle()
+
+    LaunchedEffect(track) {
+        if (track == null) onDismiss()
+    }
+
+    val currentKey = queueState.queue.getOrNull(queueState.currentIndex)
+    val isSaved = tracksByKey[currentKey]?.bookmarked == true ||
+        (saved.trackKey == currentKey && saved.saved)
+
+    NowPlayingSheet(
+        track = track,
+        state = playbackState,
+        queue = queueState.queue,
+        currentIndex = queueState.currentIndex,
+        tracksByKey = tracksByKey,
+        onEnsureTracks = playbackHost::ensureQueueTracks,
+        onSelectIndex = playbackHost::playIndex,
+        onToggle = playbackHost::toggle,
+        onNext = playbackHost::next,
+        onPrevious = playbackHost::previous,
+        onSeek = playbackHost::seekTo,
+        onShuffle = playbackHost::toggleShuffle,
+        onRepeat = playbackHost::cycleRepeat,
+        onOpenQueue = onOpenQueue,
+        onDismiss = onDismiss,
+        isSaved = isSaved,
+        onToggleSave = playbackHost::toggleSaved,
+        onOpenArtist = onOpenArtist,
+    )
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TopBar(title: String, canGoBack: Boolean, onBack: () -> Unit) {

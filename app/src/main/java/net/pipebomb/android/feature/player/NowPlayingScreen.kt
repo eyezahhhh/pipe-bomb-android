@@ -23,7 +23,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -50,6 +49,7 @@ import net.pipebomb.android.ui.components.PipeBombIconButtonStyle
 import net.pipebomb.android.ui.components.PipeBombIconButtonTone
 import net.pipebomb.android.ui.components.PipeBombProgressTrack
 import net.pipebomb.android.ui.components.ResourceImage
+import net.pipebomb.android.ui.playback.TrackPagerEffects
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,12 +59,11 @@ fun NowPlayingSheet(
     queue: List<TrackKey>,
     currentIndex: Int,
     tracksByKey: Map<TrackKey, Track>,
-    onEnsureTracks: (List<Int>) -> Unit,
+    onEnsureTracks: (Iterable<Int>) -> Unit,
     onSelectIndex: (Int) -> Unit,
     onToggle: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
-    onSwipePrevious: () -> Unit = onPrevious,
     onSeek: (Long) -> Unit,
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
@@ -77,6 +76,11 @@ fun NowPlayingSheet(
     val colors = PipeBombTheme.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val pageCount = queue.size.coerceAtLeast(1)
+    val pagerState = rememberPagerState(
+        initialPage = currentIndex.coerceIn(0, pageCount - 1),
+        pageCount = { pageCount },
+    )
 
     fun dismissThen(action: () -> Unit) {
         scope.launch {
@@ -93,6 +97,7 @@ fun NowPlayingSheet(
         scrimColor = colors.overlayScrim,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         dragHandle = null,
+        sheetGesturesEnabled = !pagerState.isScrollInProgress,
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
         NowPlayingContent(
@@ -100,13 +105,13 @@ fun NowPlayingSheet(
             state = state,
             queue = queue,
             currentIndex = currentIndex,
+            pagerState = pagerState,
             tracksByKey = tracksByKey,
             onEnsureTracks = onEnsureTracks,
             onSelectIndex = onSelectIndex,
             onToggle = onToggle,
             onNext = onNext,
             onPrevious = onPrevious,
-            onSwipePrevious = onSwipePrevious,
             onSeek = onSeek,
             onShuffle = onShuffle,
             onRepeat = onRepeat,
@@ -126,13 +131,13 @@ private fun NowPlayingContent(
     state: PlaybackUiState,
     queue: List<TrackKey>,
     currentIndex: Int,
+    pagerState: androidx.compose.foundation.pager.PagerState,
     tracksByKey: Map<TrackKey, Track>,
-    onEnsureTracks: (List<Int>) -> Unit,
+    onEnsureTracks: (Iterable<Int>) -> Unit,
     onSelectIndex: (Int) -> Unit,
     onToggle: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
-    onSwipePrevious: () -> Unit,
     onSeek: (Long) -> Unit,
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
@@ -143,26 +148,13 @@ private fun NowPlayingContent(
     onOpenArtist: (String) -> Unit,
 ) {
     val colors = PipeBombTheme.colors
-    val pageCount = queue.size.coerceAtLeast(1)
-    val initialPage = currentIndex.coerceIn(0, pageCount - 1)
-    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { pageCount })
-
-    LaunchedEffect(queue.size, currentIndex) {
-        if (queue.isNotEmpty() && pagerState.currentPage != currentIndex) {
-            pagerState.animateScrollToPage(currentIndex)
-        }
-    }
-    LaunchedEffect(pagerState.currentPage) {
-        onEnsureTracks(listOf(pagerState.currentPage - 1, pagerState.currentPage, pagerState.currentPage + 1))
-    }
-    LaunchedEffect(pagerState.settledPage, currentIndex, queue) {
-        if (queue.isNotEmpty() &&
-            pagerState.settledPage != currentIndex &&
-            pagerState.settledPage in queue.indices
-        ) {
-            onSelectIndex(pagerState.settledPage)
-        }
-    }
+    TrackPagerEffects(
+        pagerState = pagerState,
+        currentIndex = currentIndex,
+        itemCount = queue.size,
+        onEnsureTracks = onEnsureTracks,
+        onSelectIndex = onSelectIndex,
+    )
 
     Column(
         modifier = Modifier
@@ -236,7 +228,6 @@ private fun NowPlayingContent(
             val pageKey = queue[page]
             val pageTrack = tracksByKey[pageKey]
                 ?: track?.takeIf { page == currentIndex }
-            LaunchedEffect(page) { onEnsureTracks(listOf(page)) }
             PlayerPage(
                 track = pageTrack,
                 onOpenArtist = onOpenArtist,

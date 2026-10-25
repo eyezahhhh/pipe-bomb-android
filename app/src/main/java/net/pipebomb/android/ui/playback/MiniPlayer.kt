@@ -15,7 +15,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +42,7 @@ fun MiniPlayer(
     onOpen: () -> Unit,
     onToggle: () -> Unit,
     onSelectIndex: (Int) -> Unit,
-    onEnsureTracks: (List<Int>) -> Unit,
+    onEnsureTracks: (Iterable<Int>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pageCount = queue.size.coerceAtLeast(1)
@@ -52,22 +51,13 @@ fun MiniPlayer(
         pageCount = { pageCount },
     )
 
-    LaunchedEffect(queue.size, currentIndex) {
-        if (queue.isNotEmpty() && pagerState.currentPage != currentIndex) {
-            pagerState.animateScrollToPage(currentIndex)
-        }
-    }
-    LaunchedEffect(pagerState.currentPage) {
-        onEnsureTracks(listOf(pagerState.currentPage - 1, pagerState.currentPage, pagerState.currentPage + 1))
-    }
-    LaunchedEffect(pagerState.settledPage, currentIndex, queue) {
-        if (queue.isNotEmpty() &&
-            pagerState.settledPage != currentIndex &&
-            pagerState.settledPage in queue.indices
-        ) {
-            onSelectIndex(pagerState.settledPage)
-        }
-    }
+    TrackPagerEffects(
+        pagerState = pagerState,
+        currentIndex = currentIndex,
+        itemCount = queue.size,
+        onEnsureTracks = onEnsureTracks,
+        onSelectIndex = onSelectIndex,
+    )
 
     Row(
         modifier = modifier
@@ -99,7 +89,6 @@ fun MiniPlayer(
                 beyondViewportPageCount = 1,
             ) { page ->
                 val pageTrack = tracksByKey[queue[page]]
-                LaunchedEffect(page) { onEnsureTracks(listOf(page)) }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
