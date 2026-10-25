@@ -248,6 +248,26 @@ data class TrackIdsDto(
 )
 
 @Serializable
+data class AddPlaylistTracksDto(
+    val tracks: List<TrackIdDto>? = null,
+    val albums: List<NewPlaylistAlbumDto>? = null,
+)
+
+@Serializable
+data class NewPlaylistAlbumDto(
+    val uuid: String? = null,
+    val pluginId: String? = null,
+    val identityId: String? = null,
+    val identity: String? = null,
+)
+
+@Serializable
+data class UpdatePlaylistTracksDto(
+    val add: AddPlaylistTracksDto? = null,
+    val remove: List<TrackIdDto>? = null,
+)
+
+@Serializable
 data class SearchSourceSummary(
     val pluginId: String,
     val sourceId: String,

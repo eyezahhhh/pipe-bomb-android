@@ -15,6 +15,7 @@ import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.feature.player.NowPlayingSheet
 import net.pipebomb.android.test.TestFixtures
 import net.pipebomb.android.ui.catalog.DesignCatalog
+import net.pipebomb.android.ui.components.MediaActions
 import net.pipebomb.android.ui.components.TrackRow
 import net.pipebomb.android.ui.playback.MiniPlayer
 import org.junit.Rule
@@ -112,6 +113,37 @@ class ComponentScreenshotTest {
             )
         }
         composeRule.onRoot().captureRoboImage("src/test/screenshots/mini-player-buffering.png")
+    }
+
+    @Test
+    fun mediaActions() {
+        componentCanvas {
+            MediaActions(
+                onPlay = {},
+                onShuffle = {},
+                onPlayNext = {},
+                onAddToEnd = {},
+                isSaved = false,
+                onToggleSave = {},
+            )
+        }
+        composeRule.onRoot().captureRoboImage("src/test/screenshots/media-actions.png")
+    }
+
+    @Test
+    fun mediaActionsSavedAndLoading() {
+        componentCanvas {
+            MediaActions(
+                onPlay = {},
+                onShuffle = {},
+                onPlayNext = {},
+                onAddToEnd = {},
+                isSaved = false,
+                onToggleSave = {},
+                playLoading = true,
+            )
+        }
+        composeRule.onRoot().captureRoboImage("src/test/screenshots/media-actions-loading.png")
     }
 
     @Test

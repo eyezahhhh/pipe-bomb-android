@@ -164,6 +164,23 @@ class CatalogRepository @Inject constructor(
     suspend fun searchUsers(query: String): ApiResult<List<net.pipebomb.android.core.model.User>> =
         apiCall { apiClientFactory.requireApi().searchUsers(query) }
 
+    suspend fun addTracksToPlaylist(
+        playlistUuid: String,
+        trackKeys: List<net.pipebomb.android.core.model.TrackIdDto>,
+    ): ApiResult<Playlist> =
+        apiCall {
+            apiClientFactory.requireApi().updatePlaylistTracks(
+                playlistUuid,
+                net.pipebomb.android.core.model.UpdatePlaylistTracksDto(
+                    add = net.pipebomb.android.core.model.AddPlaylistTracksDto(
+                        tracks = trackKeys,
+                        albums = emptyList(),
+                    ),
+                    remove = emptyList(),
+                ),
+            )
+        }
+
     suspend fun history(page: Int, pageSize: Int): ApiResult<PlaybackHistoryPage> =
         apiCall {
             apiClientFactory.requireApi().getPlaybackHistory(pageSize = pageSize, page = page)

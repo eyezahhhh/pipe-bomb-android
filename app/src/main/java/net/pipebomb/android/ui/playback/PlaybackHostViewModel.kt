@@ -108,7 +108,11 @@ class PlaybackHostViewModel @Inject constructor(
 
     fun playNext(track: Track) = controller.playNext(track.key)
 
+    fun playNextTracks(keys: List<TrackKey>) = controller.playNext(keys)
+
     fun addToQueue(track: Track) = controller.addToQueue(listOf(track.key))
+
+    fun addTracksToQueue(keys: List<TrackKey>) = controller.addToQueue(keys)
 
     fun setSaved(track: Track, saved: Boolean) {
         viewModelScope.launch {

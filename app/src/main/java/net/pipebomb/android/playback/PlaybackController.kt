@@ -202,13 +202,16 @@ class PlaybackController @Inject constructor(
         }
     }
 
-    fun playNext(key: TrackKey) {
+    fun playNext(keys: List<TrackKey>) {
+        if (keys.isEmpty()) return
         _state.update { current ->
             val queue = current.queue.toMutableList()
-            queue.add((current.currentIndex + 1).coerceAtMost(queue.size), key)
+            queue.addAll((current.currentIndex + 1).coerceAtMost(queue.size), keys)
             current.copy(queue = queue)
         }
     }
+
+    fun playNext(key: TrackKey) = playNext(listOf(key))
 
     fun toggle() {
         if (player.mediaItemCount == 0 && _state.value.queue.isNotEmpty()) {

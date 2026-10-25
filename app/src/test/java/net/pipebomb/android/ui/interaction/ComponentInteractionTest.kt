@@ -20,6 +20,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.feature.player.NowPlayingSheet
 import net.pipebomb.android.test.TestFixtures
+import net.pipebomb.android.ui.components.MediaActions
 import net.pipebomb.android.ui.components.TrackRow
 import net.pipebomb.android.ui.playback.MiniPlayer
 import org.junit.Assert.assertEquals

@@ -28,8 +28,7 @@ import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.ui.components.AlbumCard
-import net.pipebomb.android.ui.components.PipeBombButton
-import net.pipebomb.android.ui.components.PipeBombButtonVariant
+import net.pipebomb.android.ui.components.MediaActions
 import net.pipebomb.android.ui.components.PipeBombSpinner
 import net.pipebomb.android.ui.components.ResourceImage
 import net.pipebomb.android.ui.components.TrackRow
@@ -63,7 +62,7 @@ fun ArtistScreen(
             val albums = artist.albums.orEmpty()
             LazyColumn(
                 modifier = modifier.fillMaxSize().padding(PipeBombTheme.spacing.lg),
-                verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
+                verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap),
             ) {
                 item {
                     Row(
@@ -92,19 +91,13 @@ fun ArtistScreen(
                                     color = PipeBombTheme.colors.fgTertiary,
                                 )
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm)) {
-                                PipeBombButton(
-                                    text = "Play",
-                                    onClick = { onPlay(tracks.map { it.key }, 0) },
-                                    enabled = tracks.isNotEmpty(),
-                                )
-                                PipeBombButton(
-                                    text = if (artist.bookmarked == true) "Saved" else "Save",
-                                    onClick = viewModel::toggleSave,
-                                    variant = PipeBombButtonVariant.Ghost,
-                                    enabled = artist.uuid != null,
-                                )
-                            }
+                            MediaActions(
+                                onPlay = { onPlay(tracks.map { it.key }, 0) },
+                                isSaved = artist.bookmarked == true,
+                                onToggleSave = viewModel::toggleSave,
+                                enabled = tracks.isNotEmpty(),
+                                modifier = Modifier.padding(top = PipeBombTheme.spacing.xs),
+                            )
                         }
                     }
                 }
@@ -114,6 +107,9 @@ fun ArtistScreen(
                             text = "Top tracks",
                             style = PipeBombTheme.typography.sectionHeading,
                             color = PipeBombTheme.colors.fgPrimary,
+                            modifier = Modifier.padding(
+                                top = PipeBombTheme.spacing.xl - PipeBombTheme.spacing.listGap,
+                            ),
                         )
                     }
                     itemsIndexed(tracks, key = { _, track -> track.key.toString() }) { index, track ->
@@ -133,6 +129,9 @@ fun ArtistScreen(
                             text = "Albums",
                             style = PipeBombTheme.typography.sectionHeading,
                             color = PipeBombTheme.colors.fgPrimary,
+                            modifier = Modifier.padding(
+                                top = PipeBombTheme.spacing.xl - PipeBombTheme.spacing.listGap,
+                            ),
                         )
                     }
                     item {
@@ -149,6 +148,7 @@ fun ArtistScreen(
                         }
                     }
                 }
+                item { Box(Modifier.padding(bottom = PipeBombTheme.spacing.sm)) }
             }
         }
     }

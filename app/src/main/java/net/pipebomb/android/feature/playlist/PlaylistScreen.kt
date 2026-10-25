@@ -49,6 +49,7 @@ import net.pipebomb.android.core.model.PlaylistMember
 import net.pipebomb.android.core.model.PlaylistVisibility
 import net.pipebomb.android.core.model.User
 import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.ui.components.MediaActions
 import net.pipebomb.android.ui.components.PipeBombButton
 import net.pipebomb.android.ui.components.PipeBombCheckbox
 import net.pipebomb.android.ui.components.PipeBombIconButton
@@ -69,6 +70,8 @@ fun PlaylistScreen(
     isPlaying: Boolean,
     onPlay: (List<TrackKey>, Int) -> Unit,
     onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
+    onPlayNext: (List<TrackKey>) -> Unit = {},
+    onAddToQueue: (List<TrackKey>) -> Unit = {},
     onDeleted: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PlaylistViewModel = hiltViewModel(),
@@ -81,6 +84,20 @@ fun PlaylistScreen(
     var showMembers by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
     var memberQuery by remember { mutableStateOf("") }
+    var loadingAll by remember { mutableStateOf(false) }
+
+    fun loadAllThen(action: (List<net.pipebomb.android.core.model.Track>) -> Unit) {
+        if (loadingAll) return
+        scope.launch {
+            loadingAll = true
+            try {
+                val all = viewModel.loadAllTracks()
+                if (all.isNotEmpty()) action(all)
+            } finally {
+                loadingAll = false
+            }
+        }
+    }
 
     LaunchedEffect(state.deleted) {
         if (state.deleted) onDeleted()
@@ -162,26 +179,21 @@ fun PlaylistScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm),
                     ) {
-                        PipeBombButton(
-                            text = "Play",
-                            onClick = {
-                                scope.launch {
-                                    val all = viewModel.loadAllTracks()
-                                    if (all.isNotEmpty()) onPlay(all.map { it.key }, 0)
-                                }
+                        MediaActions(
+                            onPlay = {
+                                loadAllThen { all -> onPlay(all.map { it.key }, 0) }
+                            },
+                            onShuffle = {
+                                loadAllThen { all -> onPlay(all.shuffled().map { it.key }, 0) }
+                            },
+                            onPlayNext = {
+                                loadAllThen { all -> onPlayNext(all.map { it.key }) }
+                            },
+                            onAddToEnd = {
+                                loadAllThen { all -> onAddToQueue(all.map { it.key }) }
                             },
                             enabled = state.totalCount > 0,
-                        )
-                        PipeBombButton(
-                            text = "Shuffle",
-                            onClick = {
-                                scope.launch {
-                                    val all = viewModel.loadAllTracks().shuffled()
-                                    if (all.isNotEmpty()) onPlay(all.map { it.key }, 0)
-                                }
-                            },
-                            variant = PipeBombButtonVariant.Secondary,
-                            enabled = state.totalCount > 0,
+                            playLoading = loadingAll,
                         )
                         Spacer(Modifier.weight(1f))
                         PlaylistOptionsMenu(

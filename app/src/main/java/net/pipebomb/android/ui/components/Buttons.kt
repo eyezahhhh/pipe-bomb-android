@@ -213,23 +213,23 @@ fun PipeBombIconButton(
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize()) {
+            val stroke = 3.dp.toPx()
             if (background != Color.Transparent) {
-                val inset = if (loading) 2.dp.toPx() else 0f
+                val inset = if (loading) 4.dp.toPx() else 0f
                 drawCircle(
                     color = background,
-                    radius = this.size.minDimension / 2f - inset,
+                    radius = (this.size.minDimension / 2f - inset).coerceAtLeast(0f),
                 )
             }
             if (loading) {
-                val stroke = 2.5.dp.toPx()
                 drawArc(
-                    color = if (background == Color.Transparent) colors.accentPrimary else colors.fgPrimary,
+                    color = colors.accentPrimary,
                     startAngle = rotation - 45f,
-                    sweepAngle = 270f,
+                    sweepAngle = 180f,
                     useCenter = false,
                     topLeft = Offset(stroke / 2f, stroke / 2f),
                     size = Size(this.size.width - stroke, this.size.height - stroke),
-                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                    style = Stroke(width = stroke, cap = StrokeCap.Butt),
                 )
             }
         }

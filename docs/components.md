@@ -14,7 +14,7 @@ long-press instead of right-click.
 | Component | Web reference | Web spec | Android implementation |
 | --------- | ------------- | -------- | ---------------------- |
 | Button | `button/` | 8dp radius, 4x8px padding, primary/secondary/ghost/danger, focus ring, loading hides label | `PipeBombButton`: 40-48dp height, 16dp horizontal padding, same variants; spinner centered when loading |
-| Icon button | `icon-button/` | 24/32/42/56dp sizes, simple/background/ghost, round, 2.5 stroke, loading ring, press expands background | `PipeBombIconButton`: keep visual size, 48dp minimum hit target, no ripple beyond a subtle press tint |
+| Icon button | `icon-button/` | 24/32/42/56dp sizes, simple/background/ghost, round, 2.5 stroke, loading ring, press expands background | `PipeBombIconButton`: 48dp minimum hit target; loading shrinks the background and draws an accent arc around the edge while keeping the icon visible |
 | Text input | `text-input/` | bg base, 1dp default border, 4dp radius, 1.2rem text, 2dp accent focus | `PipeBombTextField`: 48-56dp height, same colours, accent focus border, error state uses state-error |
 | Checkbox | `checkbox/` | 24dp, 4dp radius, accent when checked, tick drops in | Material-free custom checkbox; 48dp hit target |
 | Tabs | `tabs/` | wrapping row, 8dp gap, tab buttons use primary/secondary button styles | Segmented row of `PipeBombButton`s or custom tab row; never underline-only Material tabs |

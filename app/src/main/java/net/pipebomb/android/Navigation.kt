@@ -291,6 +291,8 @@ fun MainNavigation() {
                         currentKey = currentKey?.toString(),
                         isPlaying = playing,
                         onPlay = playbackHost::play,
+                        onPlayNext = playbackHost::playNextTracks,
+                        onAddToQueue = playbackHost::addTracksToQueue,
                         onOpenArtist = { open(ArtistRoute(it)) },
                         onTrackMore = { menuTrack = it },
                     )
@@ -312,6 +314,8 @@ fun MainNavigation() {
                         isPlaying = playing,
                         onPlay = playbackHost::play,
                         onTrackMore = { menuTrack = it },
+                        onPlayNext = playbackHost::playNextTracks,
+                        onAddToQueue = playbackHost::addTracksToQueue,
                         onDeleted = {
                             contentRefreshKey++
                             back()
