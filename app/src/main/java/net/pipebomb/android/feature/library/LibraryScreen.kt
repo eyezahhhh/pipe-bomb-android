@@ -3,6 +3,7 @@ package net.pipebomb.android.feature.library
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -24,8 +25,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.data.download.DownloadItem
 import net.pipebomb.android.ui.components.AlbumRow
 import net.pipebomb.android.ui.components.ArtistRow
+import net.pipebomb.android.ui.components.DownloadRow
 import net.pipebomb.android.ui.components.PipeBombButton
 import net.pipebomb.android.ui.components.PipeBombButtonVariant
 import net.pipebomb.android.ui.components.PipeBombSpinner
@@ -35,7 +38,7 @@ import net.pipebomb.android.ui.components.TrackChunkErrorRow
 import net.pipebomb.android.ui.components.TrackRow
 import net.pipebomb.android.ui.components.TrackSkeletonRow
 
-private val mainTabs = listOf("Saved", "Playlists", "History")
+private val mainTabs = listOf("Saved", "Playlists", "History", "Downloads")
 private val savedTabs = listOf("Tracks", "Albums", "Artists")
 
 @Composable
@@ -47,6 +50,13 @@ fun LibraryScreen(
     onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
     onOpenArtist: (String) -> Unit,
     onOpenPlaylist: (String) -> Unit,
+    downloads: List<DownloadItem>,
+    storageAvailable: Boolean,
+    reservePaused: Boolean,
+    onRetryDownload: (DownloadItem) -> Unit,
+    onRemoveDownload: (DownloadItem) -> Unit,
+    onResumeDownloads: () -> Unit,
+    onPlayDownload: (DownloadItem) -> Unit,
     modifier: Modifier = Modifier,
     refreshKey: Int = 0,
     viewModel: LibraryViewModel = hiltViewModel(),
@@ -129,7 +139,7 @@ fun LibraryScreen(
                 }
             }
 
-            else -> HistoryTab(
+            2 -> HistoryTab(
                 history = history,
                 currentKey = currentKey,
                 isPlaying = isPlaying,
@@ -138,8 +148,92 @@ fun LibraryScreen(
                 onRetry = viewModel::retryHistory,
                 onEnsureChunk = viewModel::ensureHistoryChunk,
             )
+
+            else -> DownloadsTab(
+                downloads = downloads,
+                storageAvailable = storageAvailable,
+                reservePaused = reservePaused,
+                onRetry = onRetryDownload,
+                onRemove = onRemoveDownload,
+                onResume = onResumeDownloads,
+                onPlay = onPlayDownload,
+            )
         }
     }
+}
+
+@Composable
+private fun DownloadsTab(
+    downloads: List<DownloadItem>,
+    storageAvailable: Boolean,
+    reservePaused: Boolean,
+    onRetry: (DownloadItem) -> Unit,
+    onRemove: (DownloadItem) -> Unit,
+    onResume: () -> Unit,
+    onPlay: (DownloadItem) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm),
+    ) {
+        if (!storageAvailable) {
+            Text(
+                text = "Download storage is unavailable. Reconnect it in Settings.",
+                style = PipeBombTheme.typography.metadata,
+                color = PipeBombTheme.colors.error,
+                modifier = Modifier.padding(horizontal = PipeBombTheme.spacing.xs),
+            )
+        }
+        if (reservePaused) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = "Paused for storage reserve",
+                    style = PipeBombTheme.typography.metadata,
+                    color = PipeBombTheme.colors.warning,
+                )
+                PipeBombButton(
+                    text = "Resume",
+                    onClick = onResume,
+                    variant = PipeBombButtonVariant.Ghost,
+                )
+            }
+        }
+        if (downloads.isEmpty()) {
+            EmptyBox("No downloads yet")
+        } else {
+            val totalBytes = downloads.sumOf { it.entity.bytesDownloaded }
+            Text(
+                text = "${downloads.size} ${if (downloads.size == 1) "item" else "items"} · " +
+                    formatBytes(totalBytes),
+                style = PipeBombTheme.typography.metadata,
+                color = PipeBombTheme.colors.fgSecondary,
+                modifier = Modifier.padding(horizontal = PipeBombTheme.spacing.xs),
+            )
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
+                items(downloads, key = { it.entity.trackKey }) { item ->
+                    DownloadRow(
+                        item = item,
+                        onPlay = { onPlay(item) },
+                        onRetry = { onRetry(item) },
+                        onRemove = { onRemove(item) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return String.format(java.util.Locale.getDefault(), "%.1f KB", kb)
+    val mb = kb / 1024.0
+    if (mb < 1024) return String.format(java.util.Locale.getDefault(), "%.1f MB", mb)
+    return String.format(java.util.Locale.getDefault(), "%.2f GB", mb / 1024.0)
 }
 
 @Composable

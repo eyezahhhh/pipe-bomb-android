@@ -10,6 +10,8 @@ import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.core.net.ServerUrlProvider
 import net.pipebomb.android.core.net.apiCall
 import net.pipebomb.android.core.net.rewriteServerUrl
+import net.pipebomb.android.data.download.DownloadRepository
+import net.pipebomb.android.data.storage.StorageLocationRepository
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,6 +21,11 @@ data class ResolvedMedia(
     val url: String,
     val type: MediaType,
     val resolvedAt: Long,
+    val sessionId: String,
+    val fromDownload: Boolean = false,
+    val downloadTitle: String? = null,
+    val downloadArtist: String? = null,
+    val downloadArtworkUrl: String? = null,
 ) {
     enum class MediaType { Stream, Hls }
 }
@@ -28,13 +35,33 @@ class PlaybackResolver @Inject constructor(
     private val apiClientFactory: ApiClientFactory,
     private val serverUrlProvider: ServerUrlProvider,
     private val sessionKeyRegistry: MediaSessionKeyRegistry,
+    private val downloadRepository: DownloadRepository,
+    private val storage: StorageLocationRepository,
 ) {
     private val mutex = Mutex()
     private val sessions = ConcurrentHashMap<String, ResolvedMedia>()
 
     suspend fun resolve(key: TrackKey, forceRefresh: Boolean = false): ApiResult<ResolvedMedia> {
-        if (!forceRefresh) {
-            sessions[key.toString()]?.let { return ApiResult.Success(it) }
+        downloadRepository.completed(key)?.let { download ->
+            if (!storage.resolve().downloadsEnabled) {
+                return ApiResult.Failure(
+                    ApiError.Local("Downloaded audio is on unavailable storage. Reconnect it or change the storage location."),
+                )
+            }
+            sessionKeyRegistry.register(download.sessionId, key)
+            return ApiResult.Success(
+                ResolvedMedia(
+                    trackKey = key,
+                    url = download.mediaUrl,
+                    type = ResolvedMedia.MediaType.Stream,
+                    resolvedAt = download.completedAt ?: System.currentTimeMillis(),
+                    sessionId = download.sessionId,
+                    fromDownload = true,
+                    downloadTitle = download.title,
+                    downloadArtist = download.artist,
+                    downloadArtworkUrl = download.artworkUrl,
+                ),
+            )
         }
         return mutex.withLock {
             if (!forceRefresh) {
@@ -67,6 +94,7 @@ class PlaybackResolver @Inject constructor(
                         url = url,
                         type = type,
                         resolvedAt = System.currentTimeMillis(),
+                        sessionId = session.id,
                     )
                     sessions[key.toString()] = resolved
                     ApiResult.Success(resolved)

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -40,6 +41,12 @@ class AppSettingsStore @Inject constructor(
             )
         }
 
+    val downloadReserveBytes: Flow<Long> = dataStore.data
+        .catch { error ->
+            if (error is IOException) emit(emptyPreferences()) else throw error
+        }
+        .map { prefs -> prefs[Keys.DownloadReserveBytes] ?: DEFAULT_DOWNLOAD_RESERVE_BYTES }
+
     suspend fun setServerUrl(url: String?) {
         dataStore.edit { prefs ->
             if (url == null) {
@@ -64,8 +71,19 @@ class AppSettingsStore @Inject constructor(
         }
     }
 
+    suspend fun setDownloadReserveBytes(bytes: Long) {
+        dataStore.edit { prefs ->
+            prefs[Keys.DownloadReserveBytes] = bytes.coerceAtLeast(0L)
+        }
+    }
+
     private object Keys {
         val ServerUrl = stringPreferencesKey("server_url")
         val ServerReady = booleanPreferencesKey("server_ready")
+        val DownloadReserveBytes = longPreferencesKey("download_reserve_bytes")
+    }
+
+    companion object {
+        const val DEFAULT_DOWNLOAD_RESERVE_BYTES = 1024L * 1024L * 1024L
     }
 }

@@ -124,6 +124,8 @@ Imitate the existing code once the scaffold exists; this file defines the target
 
 - Don't introduce a domain/DTO mapper layer for every model.
 - Don't split into Gradle modules before build times justify it.
-- Don't add Room, WorkManager, or download code before the downloads milestone.
+- Don't add a second media store for downloads. Downloads are pinned cache entries
+  with Room metadata.
+- Don't add HLS download code until the dedicated server download endpoint exists.
 - Don't use Material defaults that fight the web's visual language.
 - Don't create a second design system for a single screen.

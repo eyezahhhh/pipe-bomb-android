@@ -14,7 +14,7 @@ same product, not stock Material 3.
 | Screen patterns, touch adaptation, visual consistency | `./docs/visual-language.md` |
 | Playback, queue, notification, reporting | `./docs/playback.md` |
 | Android Auto, media browse tree, Auto queue bridge | `./docs/android-auto.md` |
-| Caching, offline playback, future downloads | `./docs/caching-and-downloads.md` |
+| Caching, offline playback, downloads, storage | `./docs/caching-and-downloads.md` |
 | API calls, auth, paging | `./docs/api.md` |
 | Metadata, artwork, attribute fallbacks | `./docs/attributes.md` |
 | Code style and package rules | `./docs/conventions.md` |
@@ -33,6 +33,11 @@ same product, not stock Material 3.
   UI and ViewModels never hold stream URLs.
 - Cache and download identity is the stable `TrackKey`, never an audio session id,
   session URL, host, or query token.
+- Downloads are progressive-only until the dedicated server download endpoint exists.
+  HLS playback is supported; HLS downloads are rejected in v1.
+- Downloads are pinned Media3 cache entries. Streamed cache and downloads pause at the
+  user-selected free-space reserve; there is no fixed download quota.
+- Changing storage deletes downloads and cached audio and restarts the process.
 - No server changes are assumed: auth is the `auth_token` cookie via OkHttp `CookieJar`.
 - Dark theme only at launch. Dynamic colour is disabled so the brand stays consistent.
 - The Pipe Bomb logo is fixed; do not redraw or replace it.

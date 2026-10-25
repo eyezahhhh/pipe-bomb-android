@@ -15,18 +15,18 @@ class MediaSessionKeyRegistry @Inject constructor() {
 
     fun cacheKey(path: String, explicitKey: String? = null): String {
         explicitKey?.let { return it }
-        val sessionId = sessionIdForPath(path)
-        val trackKey = sessionId?.let(trackKeys::get)
-        return if (trackKey != null) {
-            "track:$trackKey:$path"
-        } else {
-            "uri:$path"
-        }
-    }
-
-    private fun sessionIdForPath(path: String): String? {
         val segments = path.trim('/').split('/')
-        val index = segments.indexOf("streaming")
-        return segments.getOrNull(index + 1)?.takeIf { index >= 0 }
+        val streamingIndex = segments.indexOf("streaming")
+        val sessionId = segments.getOrNull(streamingIndex + 1)
+        if (streamingIndex < 0 || sessionId == null) return "uri:$path"
+        val trackKey = trackKeys[sessionId] ?: return "uri:$path"
+        val relativePath = segments.drop(streamingIndex + 2).joinToString("/")
+        return when {
+            relativePath.isBlank() -> "track:$trackKey"
+            relativePath.startsWith("hls/") ->
+                "track:$trackKey:hls:${relativePath.removePrefix("hls/")}"
+
+            else -> "track:$trackKey:$relativePath"
+        }
     }
 }

@@ -1,13 +1,20 @@
 package net.pipebomb.android.playback.auto
 
 import androidx.media3.common.MimeTypes
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import net.pipebomb.android.core.net.ApiClientFactory
 import net.pipebomb.android.core.net.InMemoryCookieStorage
 import net.pipebomb.android.core.net.InMemoryServerUrlProvider
 import net.pipebomb.android.core.net.PersistentCookieJar
 import net.pipebomb.android.core.net.PipeBombJson
+import net.pipebomb.android.data.download.DownloadDao
+import net.pipebomb.android.data.download.DownloadEntity
+import net.pipebomb.android.data.download.DownloadRepository
+import net.pipebomb.android.data.storage.StorageLocationRepository
 import net.pipebomb.android.playback.MediaSessionKeyRegistry
 import net.pipebomb.android.playback.PlaybackResolver
 import net.pipebomb.android.test.TestFixtures
@@ -56,6 +63,8 @@ class AutoQueueResolverTest {
             apiClientFactory = factory,
             serverUrlProvider = InMemoryServerUrlProvider(server.url("/").toString()),
             sessionKeyRegistry = MediaSessionKeyRegistry(),
+            downloadRepository = DownloadRepository(FakeDownloadDao()),
+            storage = StorageLocationRepository(ApplicationProvider.getApplicationContext()),
         )
         resolver = AutoQueueResolver(
             playbackResolver = playbackResolver,
@@ -116,4 +125,24 @@ class AutoQueueResolverTest {
         assertEquals("C", queue.tracks[queue.startIndex].title)
         assertEquals(MimeTypes.APPLICATION_M3U8, queue.items[0].localConfiguration?.mimeType)
     }
+}
+
+private class FakeDownloadDao : DownloadDao {
+    override fun observeAll(): Flow<List<DownloadEntity>> = flowOf(emptyList())
+
+    override fun observe(trackKey: String): Flow<DownloadEntity?> = flowOf(null)
+
+    override suspend fun get(trackKey: String): DownloadEntity? = null
+
+    override suspend fun getAll(): List<DownloadEntity> = emptyList()
+
+    override suspend fun upsert(entity: DownloadEntity) = Unit
+
+    override suspend fun delete(trackKey: String) = Unit
+
+    override suspend fun deleteAll() = Unit
+
+    override fun observeTotalBytes(): Flow<Long> = flowOf(0L)
+
+    override suspend fun totalBytes(): Long = 0L
 }

@@ -14,6 +14,7 @@ sealed interface ApiError {
     data class Conflict(override val message: String = "Conflict") : ApiError
     data class Client(val statusCode: Int, override val message: String) : ApiError
     data class Server(val statusCode: Int, override val message: String) : ApiError
+    data class Local(override val message: String) : ApiError
     data class Network(override val message: String = "Network unavailable", val cause: Throwable? = null) : ApiError
     data class Parse(override val message: String = "Unexpected server response", val cause: Throwable? = null) : ApiError
 }
@@ -60,6 +61,7 @@ fun ApiError.userMessage(): String = when (this) {
     is ApiError.Conflict -> message
     is ApiError.Client -> message
     is ApiError.Server -> "Server error. Try again."
+    is ApiError.Local -> message
     is ApiError.Network -> "Can't reach the server. Check your connection."
     is ApiError.Parse -> "The server returned an unexpected response."
 }
@@ -69,5 +71,6 @@ fun ApiResult.Failure.userMessage(): String = error.userMessage()
 fun ApiError.toThrowable(): Throwable = when (this) {
     is ApiError.Network -> cause ?: java.io.IOException(message)
     is ApiError.Parse -> cause ?: IllegalStateException(message)
+    is ApiError.Local -> IllegalStateException(message)
     else -> IllegalStateException(message)
 }

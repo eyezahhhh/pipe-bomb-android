@@ -23,6 +23,18 @@ class TrackCacheKeyFactoryTest {
     }
 
     @Test
+    fun progressiveKeysAreStableAcrossSessions() {
+        val key = TrackKey("youtube-music", "youtube-music", "one")
+        registry.register("session-one", key)
+        val first = registry.cacheKey("/streaming/session-one/stream")
+        registry.register("session-two", key)
+        val second = registry.cacheKey("/streaming/session-two/stream")
+
+        assertEquals("track:youtube-music:youtube-music:one:stream", first)
+        assertEquals(first, second)
+    }
+
+    @Test
     fun hlsSegmentsRemainDistinctWithinASession() {
         registry.register("session-one", TrackKey("youtube-music", "youtube-music", "one"))
 
@@ -30,6 +42,8 @@ class TrackCacheKeyFactoryTest {
         val segment = registry.cacheKey("/streaming/session-one/hls/segment-1.m4s")
 
         assertNotEquals(playlist, segment)
+        assertEquals("track:youtube-music:youtube-music:one:hls:playlist.m3u8", playlist)
+        assertTrue(!playlist.contains("session-one") && !segment.contains("session-one"))
     }
 
     @Test

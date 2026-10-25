@@ -19,18 +19,22 @@ live in `architecture.md`.
 
 | Data | Store |
 | ---- | ----- |
-| Server URL, volume, repeat/shuffle, cache limits | Preferences DataStore |
+| Server URL, volume, repeat/shuffle, download reserve | Preferences DataStore |
+| Selected storage location and pending switch | Small synchronous SharedPreferences bootstrap |
 | Queue order, current index, position | DataStore JSON snapshot, written throttled |
 | Auth cookie | OkHttp `CookieJar` backed by app-private storage |
-| Streamed audio | Media3 `SimpleCache` |
-| Downloads (later) | Same `SimpleCache` + Room download index |
+| Last authenticated user | Small synchronous bootstrap SharedPreferences for offline launch |
+| Streamed audio | Media3 `SimpleCache` in the selected app-specific directory |
+| Downloads | Same `SimpleCache` + Room download metadata and Media3 download index |
 
-No Room before downloads exist. When downloads land, Room holds download metadata
-only; audio remains in the Media3 cache.
+The storage pointer is synchronous because `SimpleCache` must choose its directory
+before asynchronous DataStore collection can start. All other settings remain in
+Preferences DataStore.
 
-Changing the server URL clears cookies, queue, search history, and media cache.
-Switching accounts keeps the media cache (cache keys are not user-scoped) but clears
-user-specific DataStore state.
+Changing the server URL clears cookies, queue, download metadata, Media3 downloads,
+and cache. Switching accounts keeps ordinary media cache (cache keys are not
+user-scoped) and downloads, but clears user-specific DataStore state. Changing storage
+location deletes all downloads and cached audio and restarts the process.
 
 ## Networking and errors
 
@@ -40,8 +44,11 @@ user-specific DataStore state.
 - Retry idempotent GETs on network errors and 5xx with capped exponential backoff.
   Propagate `CancellationException` unchanged.
 - Map failures to a sealed `ApiError`: `Unauthorized`, `Forbidden`, `NotFound`,
-  `Conflict`, `Server`, `Network`, `Parse`.
+  `Conflict`, `Client`, `Server`, `Local`, `Network`, `Parse`.
 - A 401 emits a global session-expired event; the app shell routes to Login.
+- Persist the last authenticated user. If session refresh fails with `Network`, keep the
+  cached user and open the app shell so downloaded audio remains playable offline.
+  A 401 or other definitive auth failure still clears the session.
 - Server errors use `{ error, message, statusCode }`; show `message` when present.
 - Resolve relative URLs defensively, even though the server normally absolutises
   `Resource.url` and stream `baseUrl` against the request host.
@@ -49,7 +56,8 @@ user-specific DataStore state.
   supplies the URL (self-hosted LAN servers are commonly HTTP); show a warning when
   the scheme is `http` and never hardcode HTTP endpoints.
 - Manifest: `INTERNET`, `POST_NOTIFICATIONS` (runtime on Android 13+),
-  `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`.
+  `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`,
+  `FOREGROUND_SERVICE_DATA_SYNC`.
 
 ## Navigation
 
@@ -84,7 +92,7 @@ album, artist, track, playlist, user, queue, now playing.
 
 - No multi-module Gradle split until build times justify it.
 - No domain/DTO mapper layer until a screen needs a distinct shape.
-- No Room until downloads.
 - No dynamic colour or light theme at launch.
-- No downloads UI in v1, but the cache-key boundary is final.
+- No HLS download support in v1; downloads are progressive-only until the dedicated
+  server endpoint exists.
 - No in-app server setup wizard in v1; link users to the web setup.

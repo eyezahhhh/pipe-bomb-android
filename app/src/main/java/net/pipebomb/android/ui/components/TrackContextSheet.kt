@@ -28,6 +28,8 @@ import net.pipebomb.android.R
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.Track
+import net.pipebomb.android.data.download.DownloadItem
+import net.pipebomb.android.data.download.DownloadState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,6 +42,10 @@ fun TrackContextSheet(
     onToggleSaved: (Track, Boolean) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    downloadItem: DownloadItem? = null,
+    downloadsAvailable: Boolean = true,
+    onDownload: (Track) -> Unit = {},
+    onRemoveDownload: (DownloadItem) -> Unit = {},
 ) {
     if (track == null) return
     val colors = PipeBombTheme.colors
@@ -109,6 +115,56 @@ fun TrackContextSheet(
                     onAddToQueue(track)
                 },
             )
+            when {
+                downloadItem?.state == DownloadState.Failed -> {
+                    SheetAction(
+                        icon = R.drawable.ic_tabler_refresh,
+                        label = "Retry download",
+                        enabled = downloadsAvailable,
+                        onClick = {
+                            onDismiss()
+                            onDownload(track)
+                        },
+                    )
+                    SheetAction(
+                        icon = R.drawable.ic_tabler_trash,
+                        label = "Remove download",
+                        onClick = {
+                            onDismiss()
+                            onRemoveDownload(downloadItem)
+                        },
+                    )
+                }
+
+                downloadItem != null -> SheetAction(
+                    icon = R.drawable.ic_tabler_trash,
+                    label = if (downloadItem.state == DownloadState.Completed) {
+                        "Remove download"
+                    } else {
+                        "Cancel download"
+                    },
+                    onClick = {
+                        onDismiss()
+                        onRemoveDownload(downloadItem)
+                    },
+                )
+
+                !downloadsAvailable -> SheetAction(
+                    icon = R.drawable.ic_tabler_download,
+                    label = "Download unavailable",
+                    enabled = false,
+                    onClick = {},
+                )
+
+                else -> SheetAction(
+                    icon = R.drawable.ic_tabler_download,
+                    label = "Download",
+                    onClick = {
+                        onDismiss()
+                        onDownload(track)
+                    },
+                )
+            }
             SheetAction(
                 icon = if (track.bookmarked == true) {
                     R.drawable.ic_tabler_bookmark_filled
@@ -146,12 +202,22 @@ fun TrackContextSheet(
 }
 
 @Composable
-private fun SheetAction(icon: Int, label: String, onClick: () -> Unit) {
+private fun SheetAction(
+    icon: Int,
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    val color = if (enabled) {
+        PipeBombTheme.colors.fgPrimary
+    } else {
+        PipeBombTheme.colors.fgMuted
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 52.dp)
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = PipeBombTheme.spacing.lg),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
@@ -159,13 +225,13 @@ private fun SheetAction(icon: Int, label: String, onClick: () -> Unit) {
         Icon(
             imageVector = ImageVector.vectorResource(icon),
             contentDescription = null,
-            tint = PipeBombTheme.colors.fgSecondary,
+            tint = if (enabled) PipeBombTheme.colors.fgSecondary else PipeBombTheme.colors.fgMuted,
             modifier = Modifier.size(20.dp),
         )
         Text(
             text = label,
             style = PipeBombTheme.typography.body,
-            color = PipeBombTheme.colors.fgPrimary,
+            color = color,
         )
     }
 }

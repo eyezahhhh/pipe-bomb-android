@@ -10,7 +10,7 @@ service, or playback reporting. For caching, offline playback, and downloads rea
 | ---- | ------- |
 | `TrackKey` | `pluginId + libraryId + trackId`, the only stable media identity |
 | `PlaybackQueue` | Ordered `TrackKey` list, current index, shuffle/repeat state |
-| `ResolvedMedia` | `trackKey` + resolved URL + `stream`/`hls` + expiry hint |
+| `ResolvedMedia` | `trackKey` + resolved URL + session id + `stream`/`hls` + download snapshot |
 
 - The queue never stores URLs, sessions, or resolved media.
 - Only the current track and its successor need a resolved media source.
@@ -36,6 +36,10 @@ suspend fun resolve(trackKey: TrackKey, forceRefresh: Boolean = false): Resolved
 
 - Keep a small in-memory cache of recently resolved sessions keyed by `TrackKey`.
 - Deduplicate concurrent resolves with a `Mutex`/in-flight map.
+- Before creating a session, return a completed download from Room. Register its
+  persisted session id and use the saved media URL so offline playback works.
+- If a download exists but its storage is unavailable, fail with a local error instead
+  of silently streaming from a different location.
 - On 404/410 from the media URL, invalidate the session and resolve once more.
 - Resolve `baseUrl` against the configured server URL, then append `/stream` or
   `/hls/playlist.m3u8`.

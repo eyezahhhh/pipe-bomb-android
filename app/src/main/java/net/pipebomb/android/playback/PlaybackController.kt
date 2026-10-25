@@ -35,6 +35,7 @@ import net.pipebomb.android.core.model.TrackIdDto
 import net.pipebomb.android.core.datastore.PlaybackQueueStore
 import net.pipebomb.android.core.datastore.PlaybackSnapshot
 import net.pipebomb.android.core.net.ApiResult
+import net.pipebomb.android.core.net.userMessage
 import net.pipebomb.android.data.CatalogRepository
 import net.pipebomb.android.di.ApplicationScope
 import javax.inject.Inject
@@ -388,7 +389,7 @@ class PlaybackController @Inject constructor(
             withContext(Dispatchers.Main) { player.pause() }
             val resolved = when (val result = resolver.resolve(key)) {
                 is ApiResult.Failure -> {
-                    _state.update { it.copy(isBuffering = false, error = "Unable to play track") }
+                    _state.update { it.copy(isBuffering = false, error = result.error.userMessage()) }
                     return@launch
                 }
 
@@ -426,24 +427,34 @@ class PlaybackController @Inject constructor(
         track: Track?,
     ): MediaItem {
         val metadata = MediaMetadata.Builder().apply {
-            track?.let { t ->
-                setTitle(AttributeReader.string(t.attributes, "title") ?: t.title)
-                val artists = t.artists
-                    ?.mapNotNull { artist ->
-                        AttributeReader.string(artist.artist.attributes, "name")
+            if (media.fromDownload) {
+                media.downloadTitle?.let(::setTitle)
+                media.downloadArtist?.let(::setArtist)
+                media.downloadArtworkUrl?.let { setArtworkUri(android.net.Uri.parse(it)) }
+            } else {
+                track?.let { t ->
+                    setTitle(AttributeReader.string(t.attributes, "title") ?: t.title)
+                    val artists = t.artists
+                        ?.mapNotNull { artist ->
+                            AttributeReader.string(artist.artist.attributes, "name")
+                        }
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: AttributeReader.strings(t.attributes, "artist", multiple = true)
+                    artists?.joinToString(", ")?.let { setArtist(it) }
+                    AttributeReader.resource(t.attributes, "front")?.url?.let {
+                        setArtworkUri(android.net.Uri.parse(it))
                     }
-                    ?.takeIf { it.isNotEmpty() }
-                    ?: AttributeReader.strings(t.attributes, "artist", multiple = true)
-                artists?.joinToString(", ")?.let { setArtist(it) }
-                AttributeReader.resource(t.attributes, "front")?.url?.let {
-                    setArtworkUri(android.net.Uri.parse(it))
                 }
             }
         }.build()
         return MediaItem.Builder()
             .setUri(media.url)
             .setMediaId(key.toString())
-            .setCustomCacheKey(key.toString())
+            .apply {
+                if (media.type == ResolvedMedia.MediaType.Stream) {
+                    setCustomCacheKey(TrackCacheKeyFactory.streamKey(key.toString()))
+                }
+            }
             .setMediaMetadata(metadata)
             .apply {
                 if (media.type == ResolvedMedia.MediaType.Hls) {

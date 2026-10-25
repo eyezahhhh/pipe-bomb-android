@@ -41,6 +41,8 @@ import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.data.download.DownloadItem
+import net.pipebomb.android.data.download.DownloadState
 import net.pipebomb.android.playback.PlaybackUiState
 import net.pipebomb.android.playback.RepeatMode
 import net.pipebomb.android.ui.components.PipeBombIconButton
@@ -71,6 +73,10 @@ fun NowPlayingSheet(
     onDismiss: () -> Unit,
     isSaved: Boolean = false,
     onToggleSave: () -> Unit = {},
+    downloadItem: DownloadItem? = null,
+    downloadsAvailable: Boolean = true,
+    onDownload: () -> Unit = {},
+    onRemoveDownload: () -> Unit = {},
     onOpenArtist: (String) -> Unit = {},
 ) {
     val colors = PipeBombTheme.colors
@@ -119,6 +125,10 @@ fun NowPlayingSheet(
             onOpenQueue = { dismissThen(onOpenQueue) },
             isSaved = isSaved,
             onToggleSave = onToggleSave,
+            downloadItem = downloadItem,
+            downloadsAvailable = downloadsAvailable,
+            onDownload = onDownload,
+            onRemoveDownload = onRemoveDownload,
             onOpenArtist = { artistId -> dismissThen { onOpenArtist(artistId) } },
         )
     }
@@ -145,6 +155,10 @@ private fun NowPlayingContent(
     onOpenQueue: () -> Unit,
     isSaved: Boolean,
     onToggleSave: () -> Unit,
+    downloadItem: DownloadItem?,
+    downloadsAvailable: Boolean,
+    onDownload: () -> Unit,
+    onRemoveDownload: () -> Unit,
     onOpenArtist: (String) -> Unit,
 ) {
     val colors = PipeBombTheme.colors
@@ -189,6 +203,34 @@ private fun NowPlayingContent(
                 color = colors.fgTertiary,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
+                val downloadIcon = when (downloadItem?.state) {
+                    DownloadState.Completed -> R.drawable.ic_tabler_check_filled
+                    DownloadState.Failed -> R.drawable.ic_tabler_refresh
+                    else -> R.drawable.ic_tabler_download
+                }
+                val downloadDescription = when (downloadItem?.state) {
+                    DownloadState.Completed -> "Remove download"
+                    DownloadState.Failed -> "Retry download"
+                    null -> "Download"
+                    else -> "Cancel download"
+                }
+                PipeBombIconButton(
+                    icon = ImageVector.vectorResource(downloadIcon),
+                    contentDescription = downloadDescription,
+                    onClick = {
+                        when (downloadItem?.state) {
+                            null, DownloadState.Failed -> onDownload()
+                            else -> onRemoveDownload()
+                        }
+                    },
+                    tone = if (downloadItem?.state == DownloadState.Completed) {
+                        PipeBombIconButtonTone.Accent
+                    } else {
+                        PipeBombIconButtonTone.Neutral
+                    },
+                    enabled = downloadItem != null || downloadsAvailable,
+                    loading = downloadItem?.state == DownloadState.Downloading,
+                )
                 PipeBombIconButton(
                     icon = ImageVector.vectorResource(
                         if (isSaved) R.drawable.ic_tabler_bookmark_filled else R.drawable.ic_tabler_bookmark,

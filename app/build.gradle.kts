@@ -62,6 +62,10 @@ kotlin {
     jvmToolchain(21)
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
@@ -129,6 +133,9 @@ dependencies {
   implementation(libs.paging.runtime)
   implementation(libs.paging.compose)
   implementation(libs.datastore.preferences)
+  implementation(libs.room.runtime)
+  implementation(libs.room.ktx)
+  ksp(libs.room.compiler)
 
   // Media playback
   implementation(libs.media3.exoplayer)
@@ -139,7 +146,11 @@ dependencies {
 
   // Background work
   implementation(libs.work.runtime)
+  implementation(libs.androidx.hilt.work)
+  ksp(libs.androidx.hilt.compiler)
 
   // Tests
   testImplementation(libs.okhttp.mockwebserver)
+  testImplementation(libs.room.testing)
+  testImplementation(libs.work.testing)
 }

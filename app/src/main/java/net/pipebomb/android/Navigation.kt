@@ -27,6 +27,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -55,6 +56,9 @@ import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.feature.album.AlbumScreen
 import net.pipebomb.android.feature.artist.ArtistScreen
+import net.pipebomb.android.feature.downloads.DownloadEffect
+import net.pipebomb.android.feature.downloads.DownloadHostState
+import net.pipebomb.android.feature.downloads.DownloadHostViewModel
 import net.pipebomb.android.feature.home.HomeScreen
 import net.pipebomb.android.feature.library.LibraryScreen
 import net.pipebomb.android.feature.playlist.PlaylistScreen
@@ -62,6 +66,7 @@ import net.pipebomb.android.feature.settings.SettingsScreen
 import net.pipebomb.android.feature.player.NowPlayingSheet
 import net.pipebomb.android.feature.player.QueueScreen
 import net.pipebomb.android.feature.search.SearchScreen
+import net.pipebomb.android.ui.components.PipeBombSnackbarHost
 import net.pipebomb.android.ui.components.TrackContextSheet
 import net.pipebomb.android.ui.playback.MiniPlayer
 import net.pipebomb.android.ui.playback.PlaybackHostViewModel
@@ -89,8 +94,19 @@ fun MainNavigation() {
     var contentRefreshKey by remember { mutableIntStateOf(0) }
     val navigationEasing = remember { CubicBezierEasing(0.2f, 0f, 0f, 1f) }
     val playbackHost: PlaybackHostViewModel = hiltViewModel()
+    val downloadHost: DownloadHostViewModel = hiltViewModel()
+    val downloadState by downloadHost.state.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
     val currentKey by playbackHost.currentKey.collectAsStateWithLifecycle()
     val playing by playbackHost.isPlaying.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        downloadHost.effects.collect { effect ->
+            when (effect) {
+                is DownloadEffect.Message -> snackbarHostState.showSnackbar(effect.text)
+            }
+        }
+    }
 
     fun selectTab(route: TopLevelRoute) {
         if (selectedTab == route && backStack.size == 1) return
@@ -116,6 +132,7 @@ fun MainNavigation() {
     Scaffold(
         containerColor = PipeBombTheme.colors.bgBase,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { PipeBombSnackbarHost(snackbarHostState) },
         topBar = {
             TopBar(
                     title = when (current) {
@@ -280,6 +297,13 @@ fun MainNavigation() {
                         onOpenArtist = { open(ArtistRoute(it)) },
                         onOpenPlaylist = { open(PlaylistRoute(it)) },
                         onTrackMore = { menuTrack = it },
+                        downloads = downloadState.downloads,
+                        storageAvailable = downloadState.storageAvailable,
+                        reservePaused = downloadState.reservePaused,
+                        onRetryDownload = downloadHost::retry,
+                        onRemoveDownload = downloadHost::remove,
+                        onResumeDownloads = downloadHost::resume,
+                        onPlayDownload = { playbackHost.playNow(it.key) },
                         refreshKey = contentRefreshKey,
                     )
                 }
@@ -337,6 +361,9 @@ fun MainNavigation() {
                     playerOpen = false
                     open(ArtistRoute(it))
                 },
+                downloadState = downloadState,
+                onDownload = downloadHost::start,
+                onRemoveDownload = downloadHost::remove,
             )
         }
         TrackContextSheet(
@@ -354,6 +381,10 @@ fun MainNavigation() {
                 menuTrack = null
                 open(AlbumRoute(it))
             },
+            downloadItem = menuTrack?.let { downloadState.byTrack[it.key.toString()] },
+            downloadsAvailable = downloadState.storageAvailable,
+            onDownload = downloadHost::start,
+            onRemoveDownload = downloadHost::remove,
         )
     }
 }
@@ -389,6 +420,9 @@ private fun PlayerOverlay(
     onDismiss: () -> Unit,
     onOpenQueue: () -> Unit,
     onOpenArtist: (String) -> Unit,
+    downloadState: DownloadHostState,
+    onDownload: (Track) -> Unit,
+    onRemoveDownload: (net.pipebomb.android.data.download.DownloadItem) -> Unit,
 ) {
     val track by playbackHost.currentTrack.collectAsStateWithLifecycle()
     val playbackState by playbackHost.state.collectAsStateWithLifecycle()
@@ -403,6 +437,7 @@ private fun PlayerOverlay(
     val currentKey = queueState.queue.getOrNull(queueState.currentIndex)
     val isSaved = tracksByKey[currentKey]?.bookmarked == true ||
         (saved.trackKey == currentKey && saved.saved)
+    val downloadItem = currentKey?.let { downloadState.byTrack[it.toString()] }
 
     NowPlayingSheet(
         track = track,
@@ -422,6 +457,10 @@ private fun PlayerOverlay(
         onDismiss = onDismiss,
         isSaved = isSaved,
         onToggleSave = playbackHost::toggleSaved,
+        downloadItem = downloadItem,
+        downloadsAvailable = downloadState.storageAvailable,
+        onDownload = { track?.let(onDownload) },
+        onRemoveDownload = { downloadItem?.let(onRemoveDownload) },
         onOpenArtist = onOpenArtist,
     )
 }

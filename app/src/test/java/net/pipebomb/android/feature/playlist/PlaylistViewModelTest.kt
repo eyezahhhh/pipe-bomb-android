@@ -1,5 +1,10 @@
 package net.pipebomb.android.feature.playlist
 
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -28,7 +33,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
 
+@RunWith(AndroidJUnit4::class)
 class PlaylistViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -49,8 +56,10 @@ class PlaylistViewModelTest {
         )
         val catalogRepository = CatalogRepository(apiClientFactory, TrackCache())
         val authRepository = AuthRepository(
-            apiClientFactory,
-            PersistentCookieJar(InMemoryCookieStorage()),
+            context = ApplicationProvider.getApplicationContext(),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            apiClientFactory = apiClientFactory,
+            cookieJar = PersistentCookieJar(InMemoryCookieStorage()),
         )
         viewModel = PlaylistViewModel(catalogRepository, authRepository)
     }

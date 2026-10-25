@@ -12,9 +12,13 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import net.pipebomb.android.core.design.theme.PipeBombTheme
+import net.pipebomb.android.data.download.DownloadEntity
+import net.pipebomb.android.data.download.DownloadItem
+import net.pipebomb.android.data.download.DownloadState
 import net.pipebomb.android.feature.player.NowPlayingSheet
 import net.pipebomb.android.test.TestFixtures
 import net.pipebomb.android.ui.catalog.DesignCatalog
+import net.pipebomb.android.ui.components.DownloadRow
 import net.pipebomb.android.ui.components.MediaActions
 import net.pipebomb.android.ui.components.TrackRow
 import net.pipebomb.android.ui.playback.MiniPlayer
@@ -144,6 +148,36 @@ class ComponentScreenshotTest {
             )
         }
         composeRule.onRoot().captureRoboImage("src/test/screenshots/media-actions-loading.png")
+    }
+
+    @Test
+    fun downloadRow() {
+        componentCanvas {
+            DownloadRow(
+                item = DownloadItem(
+                    DownloadEntity(
+                        trackKey = "demo:demo:track",
+                        pluginId = "demo",
+                        libraryId = "demo",
+                        trackId = "track",
+                        title = "Track title",
+                        artist = "Artist",
+                        album = "Album",
+                        artworkUrl = null,
+                        sessionId = "session",
+                        mediaUrl = "https://example.test/stream",
+                        state = DownloadState.Downloading.name,
+                        bytesDownloaded = 4L * 1024L * 1024L,
+                        bytesTotal = 8L * 1024L * 1024L,
+                        requestedAt = 1L,
+                    ),
+                ),
+                onPlay = {},
+                onRetry = {},
+                onRemove = {},
+            )
+        }
+        composeRule.onRoot().captureRoboImage("src/test/screenshots/download-row.png")
     }
 
     @Test

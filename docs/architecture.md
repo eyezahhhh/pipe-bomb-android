@@ -15,8 +15,10 @@ Constraints that shape the architecture:
 - No server changes are assumed. Authentication is the `auth_token` cookie.
 - Metadata is plugin-defined, so the client must render arbitrary attributes.
 - Audio sessions are ephemeral. Playback resolves a session before playing.
-- Downloads are a future core feature, so cache identity and storage must be stable
-  from day one even though v1 only caches streamed audio.
+- Downloads share the Media3 cache with streaming. Cache identity is stable and
+  `TrackKey`-derived; v1 downloads progressive audio only.
+- Storage is user-selectable internal, primary external, or removable app-specific
+  storage. Changing location deletes downloads and cached audio.
 - One phone app now; tablet and Android Auto later.
 
 ## Package map
@@ -34,8 +36,11 @@ when its first real file lands; do not commit empty placeholder directories.
 | `core/datastore/` | Preferences DataStore: server URL, queue snapshot, settings |
 | `core/design/` | Theme, colour/type/shape tokens, shared drawing primitives |
 | `ui/` | App shell, navigation graph, shared Compose components |
-| `data/` | Repositories: auth, catalog, library, playlists, search, history |
+| `data/` | Repositories: auth, catalog, library, playlists, search, history, downloads |
+| `data/storage/` | Storage volume discovery, selected/fallback cache location, process restart |
+| `data/download/` | Room download metadata, DAO, repository |
 | `playback/` | `MediaLibraryService`, resolver, queue, cache, reporter, Auto browse bridge |
+| `playback/download/` | Download manager, worker, scheduler, pins, reserve checks |
 | `feature/` | Screen-level composables, ViewModels, per-feature UI state |
 
 ## Dependency rules
