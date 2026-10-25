@@ -17,8 +17,10 @@ surface through one `ExoPlayer` and one `SimpleCache`.
   - `androidx.media3.session.MediaSessionService`
   - `android.media.browse.MediaBrowserService`
   - `android.media.action.MEDIA_PLAY_FROM_SEARCH`
-- `res/xml/automotive_app_desc.xml` declares `<uses name="media" />`, wired through the
-  `com.google.android.gms.car.application` meta-data.
+- `res/xml/automotive_app_desc.xml` declares `<uses name="media" />`.
+- The `com.google.android.gms.car.application` meta-data must be a direct child of
+  `<application>`, not the media service. Android Auto discovers media apps from that
+  application-level declaration.
 
 Android Auto is the target for v1. The MediaLibraryService structure is compatible
 with Automotive OS later; the automotive feature manifest can be added separately.
@@ -112,6 +114,21 @@ cookie.
   search, artwork, next/previous, and phone-state synchronization.
 - Production Auto distribution requires Google approval; DHU is sufficient for
   development.
+
+## Troubleshooting discovery
+
+If the app is not listed in Android Auto:
+
+- Confirm the `com.google.android.gms.car.application` meta-data is on `<application>`.
+- Confirm the media service exports the `androidx.media3.session.MediaLibraryService`,
+  `androidx.media3.session.MediaSessionService`, and
+  `android.media.browse.MediaBrowserService` actions.
+- For a sideloaded build, enable Android Auto developer mode and turn on “Unknown
+  sources” in the Android Auto developer settings. Production distribution requires
+  Google approval.
+- Reinstall the APK, force-stop Android Auto, and relaunch it; the launcher caches app
+  capabilities.
+- Validate with the Desktop Head Unit (DHU) before testing on a head unit.
 
 ## Follow-ups
 
