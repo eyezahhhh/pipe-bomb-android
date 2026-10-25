@@ -88,7 +88,7 @@ display, and saved-track hydration.
 | `GET /playback-history/me` | `page`, `pageSize`; use for Home recent activity |
 | `GET /playlists/{uuid}` | pass `tracks` to include a preview; `/all` returns every track id |
 | `POST /search` | full arrays; no paging |
-| `POST /ephemeral/search` | full arrays per source |
+| `POST /ephemeral/search` | full arrays per source; cache returned track metadata for playback |
 
 Use Paging 3 for saved lists. For playlists, fetch `/all`, batch-hydrate tracks in
 chunks of 50, and expose a paged list. Keep metadata in memory for 10 minutes.

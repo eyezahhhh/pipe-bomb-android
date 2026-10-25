@@ -5,6 +5,7 @@ import net.pipebomb.android.core.model.Artist
 import net.pipebomb.android.core.model.EphemeralSearchDto
 import net.pipebomb.android.core.model.EphemeralSearchResults
 import net.pipebomb.android.core.model.EphemeralSource
+import net.pipebomb.android.core.model.EphemeralTrack
 import net.pipebomb.android.core.model.PlaybackHistoryPage
 import net.pipebomb.android.core.model.Playlist
 import net.pipebomb.android.core.model.PlaylistTrack
@@ -206,12 +207,17 @@ class CatalogRepository @Inject constructor(
         pluginId: String,
         sourceId: String,
         query: String,
-    ): ApiResult<EphemeralSearchResults> =
-        apiCall {
+    ): ApiResult<EphemeralSearchResults> {
+        val result = apiCall {
             apiClientFactory.requireApi().searchEphemeral(
                 EphemeralSearchDto(pluginId, sourceId, query),
             )
         }
+        if (result is ApiResult.Success) {
+            trackCache.putAll(result.value.tracks.map { it.toTrack() })
+        }
+        return result
+    }
 
     suspend fun setTrackSaved(key: TrackKey, saved: Boolean): ApiResult<Unit> =
         apiCall {
@@ -242,6 +248,17 @@ class CatalogRepository @Inject constructor(
             }
             if (!response.isSuccessful) throw HttpException(response)
         }
+
+    private fun EphemeralTrack.toTrack(): Track = Track(
+        uuid = uuid.orEmpty(),
+        trackId = trackId,
+        pluginId = pluginId,
+        libraryId = libraryId,
+        title = title,
+        artists = artists,
+        attributes = attributes,
+        bookmarked = bookmarked,
+    )
 
     private data class IdentityRef(
         val pluginId: String,

@@ -1,9 +1,14 @@
 package net.pipebomb.android.core.net
 
 import kotlinx.coroutines.runBlocking
+import net.pipebomb.android.core.attributes.AttributeReader
+import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.data.CatalogRepository
+import net.pipebomb.android.data.TrackCache
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -84,5 +89,41 @@ class ApiContractTest {
         assertTrue(body.contains("\"withAlbums\":true"))
         assertTrue(body.contains("\"withArtists\":true"))
         assertTrue(body.contains("\"query\":\"hello\""))
+    }
+
+    @Test
+    fun ephemeralTrackMetadataIsAvailableToPlaybackWithoutAnotherRequest() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {
+                      "tracks": [{
+                        "uuid": "ephemeral-uuid",
+                        "trackId": "track",
+                        "pluginId": "plugin",
+                        "libraryId": "library",
+                        "title": "Raw title",
+                        "attributes": {
+                          "title": {"type":"string","values":["Ephemeral title"],"formatted":[]},
+                          "artist": {"type":"string","values":["Ephemeral artist"],"formatted":[]}
+                        }
+                      }],
+                      "artists": [],
+                      "albums": []
+                    }
+                    """.trimIndent(),
+                ),
+        )
+        val repository = CatalogRepository(factory, TrackCache())
+
+        repository.ephemeralSearch("plugin", "source", "query")
+        val cached = repository.tracks(listOf(TrackKey("plugin", "library", "track")))
+
+        val track = (cached as ApiResult.Success).value.single()
+        assertEquals("Ephemeral title", AttributeReader.string(track.attributes, "title"))
+        assertEquals("Ephemeral artist", AttributeReader.string(track.attributes, "artist"))
+        assertEquals(1, server.requestCount)
     }
 }
