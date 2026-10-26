@@ -7,18 +7,21 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.first
+import net.pipebomb.android.core.datastore.AppSettingsStore
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class DownloadScheduler @Inject constructor(
     @param:ApplicationContext private val context: Context,
+    private val settings: AppSettingsStore,
 ) {
-    fun schedule() {
+    suspend fun schedule() {
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
             .setConstraints(
                 Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .setRequiredNetworkType(requiredNetworkType())
                     .build(),
             )
             .build()
@@ -29,9 +32,21 @@ class DownloadScheduler @Inject constructor(
         )
     }
 
+    suspend fun reschedule() {
+        cancel()
+        schedule()
+    }
+
     fun cancel() {
         WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
     }
+
+    private suspend fun requiredNetworkType(): NetworkType =
+        if (settings.allowMobileDataDownloads.first()) {
+            NetworkType.CONNECTED
+        } else {
+            NetworkType.UNMETERED
+        }
 
     companion object {
         const val WORK_NAME = "download-queue"

@@ -1,6 +1,6 @@
 # 007. Android Auto uses a MediaLibraryService with context-encoded media IDs
 
-Status: accepted
+Status: accepted; session-resolution and track-cap decisions superseded by ADR 010
 
 Context: Pipe Bomb audio requires a per-track server session. Android Auto browses a
 catalogue and sends only the selected `MediaItem` to the session; it does not send the

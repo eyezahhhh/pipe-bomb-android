@@ -3,6 +3,7 @@ package net.pipebomb.android.playback.auto
 import android.content.ComponentName
 import android.content.Context
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaBrowser
 import androidx.media3.session.SessionToken
@@ -17,6 +18,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeNotNull
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.TimeUnit
@@ -83,6 +85,7 @@ class AutoBrowseTest {
                 childrenFuture.set(browser.getChildren(AutoIds.HISTORY, 0, 10, null))
             }
             val children = childrenFuture.get().get(15, TimeUnit.SECONDS).value.orEmpty()
+            assumeTrue("Requires authenticated history with at least two tracks", children.size > 1)
             val item = children.firstOrNull { it.mediaMetadata.isPlayable == true }
             assumeNotNull("Requires an authenticated catalog with history", item)
 
@@ -102,6 +105,70 @@ class AutoBrowseTest {
                 Thread.sleep(100)
             }
             assertTrue("Expected a full queue, got $count item(s)", count > 1)
+        } finally {
+            instrumentation.runOnMainSync { browser.release() }
+        }
+    }
+
+    @Test
+    fun playlistSelectionBuildsFullQueueAndEnablesNext() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val token = SessionToken(
+            context,
+            ComponentName(context, PlaybackService::class.java),
+        )
+        val browser = MediaBrowser.Builder(context, token).buildAsync().get(15, TimeUnit.SECONDS)
+        try {
+            val playlistsFuture = AtomicReference<ListenableFuture<LibraryResult<ImmutableList<MediaItem>>>>()
+            instrumentation.runOnMainSync {
+                playlistsFuture.set(browser.getChildren(AutoIds.PLAYLISTS, 0, 20, null))
+            }
+            val playlists = playlistsFuture.get().get(15, TimeUnit.SECONDS).value.orEmpty()
+            var selected: MediaItem? = null
+            for (playlist in playlists) {
+                val tracksFuture = AtomicReference<ListenableFuture<LibraryResult<ImmutableList<MediaItem>>>>()
+                instrumentation.runOnMainSync {
+                    tracksFuture.set(browser.getChildren(playlist.mediaId, 0, 5, null))
+                }
+                val tracks = tracksFuture.get().get(15, TimeUnit.SECONDS).value.orEmpty()
+                if (tracks.size > 1) {
+                    selected = playlist
+                    break
+                }
+            }
+            assumeNotNull("Requires an authenticated playlist with at least two tracks", selected)
+
+            instrumentation.runOnMainSync {
+                browser.setMediaItem(selected!!)
+                browser.prepare()
+                browser.play()
+            }
+
+            val deadline = System.currentTimeMillis() + 30_000
+            var count = 0
+            while (System.currentTimeMillis() < deadline) {
+                val countRef = AtomicReference(0)
+                instrumentation.runOnMainSync { countRef.set(browser.mediaItemCount) }
+                count = countRef.get()
+                if (count > 1) break
+                Thread.sleep(100)
+            }
+            assertTrue("Expected the full playlist queue, got $count item(s)", count > 1)
+            val syntheticRef = AtomicReference(false)
+            instrumentation.runOnMainSync {
+                syntheticRef.set(
+                    (0 until browser.mediaItemCount).all { index ->
+                        browser.getMediaItemAt(index).localConfiguration?.uri?.scheme == "pipebomb"
+                    },
+                )
+            }
+            assertTrue("Expected lazy synthetic queue items", syntheticRef.get())
+            val nextRef = AtomicReference(false)
+            instrumentation.runOnMainSync {
+                nextRef.set(browser.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM))
+            }
+            assertTrue("Expected Next to be available", nextRef.get())
         } finally {
             instrumentation.runOnMainSync { browser.release() }
         }

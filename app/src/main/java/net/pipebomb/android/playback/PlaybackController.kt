@@ -1,20 +1,19 @@
 
 package net.pipebomb.android.playback
 
-import androidx.annotation.OptIn
-import androidx.media3.common.util.UnstableApi
-
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
-import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,21 +27,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import net.pipebomb.android.core.attributes.AttributeReader
-import net.pipebomb.android.core.model.AttributeMap
-import net.pipebomb.android.core.model.BufferAttribute
-import net.pipebomb.android.core.model.Resource
-import net.pipebomb.android.core.model.StringAttribute
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.model.TrackIdDto
 import net.pipebomb.android.core.datastore.PlaybackQueueStore
 import net.pipebomb.android.core.datastore.PlaybackSnapshot
-import net.pipebomb.android.core.net.ApiError
 import net.pipebomb.android.core.net.ApiResult
-import net.pipebomb.android.core.net.ConnectivityStatus
-import net.pipebomb.android.core.net.userMessage
 import net.pipebomb.android.data.CatalogRepository
+import net.pipebomb.android.data.download.DownloadRepository
+import net.pipebomb.android.data.download.toTrack
 import net.pipebomb.android.di.ApplicationScope
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -71,8 +64,8 @@ class PlaybackController @Inject constructor(
     private val resolver: PlaybackResolver,
     private val cache: PlaybackCache,
     private val catalogRepository: CatalogRepository,
+    private val downloadRepository: DownloadRepository,
     private val queueStore: PlaybackQueueStore,
-    private val connectivity: ConnectivityStatus,
 ) {
     private val _state = MutableStateFlow(PlaybackUiState())
     val state: StateFlow<PlaybackUiState> = _state.asStateFlow()
@@ -82,12 +75,21 @@ class PlaybackController @Inject constructor(
 
     private var originalQueue: List<TrackKey> = emptyList()
     private var retriedFor: String? = null
+    private var bufferingSinceMs = 0L
+    private var playRequestId = 0L
     private var externalQueueMode = false
     private var externalTracks: Map<TrackKey, Track> = emptyMap()
 
     val player: ExoPlayer by lazy {
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(cache.dataSourceFactory))
+            .setMediaSourceFactory(
+                LazyTrackMediaSourceFactory(
+                    resolver = resolver,
+                    childFactory = DefaultMediaSourceFactory(cache.dataSourceFactory)
+                        .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(5)),
+                    scope = scope,
+                ),
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -97,6 +99,7 @@ class PlaybackController @Inject constructor(
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
+            .apply { setWakeMode(C.WAKE_MODE_NETWORK) }
             .apply {
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -112,8 +115,18 @@ class PlaybackController @Inject constructor(
                     }
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_READY) {
+                            retriedFor = null
+                            bufferingSinceMs = 0
+                        }
                         when (playbackState) {
-                            Player.STATE_BUFFERING -> _state.update { it.copy(isBuffering = true) }
+                            Player.STATE_BUFFERING -> {
+                                if (bufferingSinceMs == 0L) {
+                                    bufferingSinceMs = SystemClock.elapsedRealtime()
+                                }
+                                _state.update { it.copy(isBuffering = true) }
+                            }
+
                             Player.STATE_READY -> {
                                 _state.update {
                                     it.copy(
@@ -183,6 +196,7 @@ class PlaybackController @Inject constructor(
                                 durationMs = player.duration.coerceAtLeast(0),
                             )
                         }
+                        checkForStall()
                     }
                 }
             }
@@ -191,6 +205,8 @@ class PlaybackController @Inject constructor(
 
     fun play(keys: List<TrackKey>, startIndex: Int = 0) {
         if (keys.isEmpty()) return
+        retriedFor = null
+        bufferingSinceMs = 0
         externalQueueMode = false
         externalTracks = emptyMap()
         originalQueue = keys
@@ -214,12 +230,15 @@ class PlaybackController @Inject constructor(
             player.seekTo(index, 0)
             return
         }
+        retriedFor = null
         _state.update { it.copy(currentIndex = index, error = null) }
         playCurrent()
     }
 
     fun prepareExternalQueue(tracks: List<Track>, startIndex: Int) {
         if (tracks.isEmpty()) return
+        retriedFor = null
+        bufferingSinceMs = 0
         externalQueueMode = true
         externalTracks = tracks.associateBy { it.key }
         val keys = tracks.map { it.key }
@@ -389,31 +408,32 @@ class PlaybackController @Inject constructor(
 
     private fun playCurrent(startPositionMs: Long = 0) {
         val key = _state.value.currentKey ?: return
+        val requestId = ++playRequestId
+        bufferingSinceMs = 0
         externalQueueMode = false
         externalTracks = emptyMap()
         scope.launch {
             _state.update { it.copy(isBuffering = true, error = null) }
             withContext(Dispatchers.Main) { player.pause() }
-            val resolved = when (val result = resolver.resolve(key)) {
-                is ApiResult.Failure -> {
-                    val message = if (result.error is ApiError.Local) {
-                        result.error.userMessage()
-                    } else if (!connectivity.isOnline.value) {
-                        "This track isn't downloaded and can't stream offline."
-                    } else {
-                        result.error.userMessage()
-                    }
-                    _state.update { it.copy(isBuffering = false, error = message) }
-                    return@launch
-                }
-
-                is ApiResult.Success -> result.value
+            val fetchedTrack = (catalogRepository.tracks(listOf(key)) as? ApiResult.Success)
+                ?.value
+                ?.firstOrNull()
+            val downloadedTrack = if (fetchedTrack == null) {
+                downloadRepository.completed(key)?.toTrack()
+            } else {
+                null
             }
-            val fetchedTrack = (catalogRepository.tracks(listOf(key)) as? ApiResult.Success)?.value?.firstOrNull()
-            val track = fetchedTrack ?: fallbackTrack(key, resolved)
+            if (requestId != playRequestId) return@launch
+            val track = fetchedTrack ?: downloadedTrack ?: Track(
+                trackId = key.trackId,
+                pluginId = key.pluginId,
+                libraryId = key.libraryId,
+                title = key.trackId,
+            )
             _currentTrack.value = track
-            val item = buildMediaItem(key, resolved, track)
+            val item = TrackMediaItemFactory.create(track)
             withContext(Dispatchers.Main) {
+                if (requestId != playRequestId) return@withContext
                 context.startService(Intent(context, PlaybackService::class.java))
                 player.setMediaItem(item)
                 player.prepare()
@@ -428,77 +448,6 @@ class PlaybackController @Inject constructor(
                 }
             }
         }
-    }
-
-    private fun fallbackTrack(key: TrackKey, media: ResolvedMedia): Track {
-        if (media.fromDownload) {
-            val title = media.downloadTitle ?: key.trackId
-            val attributes = buildMap {
-                put("title", StringAttribute(listOf(title), listOf(title)))
-                media.downloadArtist?.let {
-                    put("artist", StringAttribute(listOf(it), listOf(it)))
-                }
-                media.downloadArtworkUrl?.let {
-                    put("front", BufferAttribute(listOf(Resource(url = it))))
-                }
-            }
-            return Track(
-                trackId = key.trackId,
-                pluginId = key.pluginId,
-                libraryId = key.libraryId,
-                title = title,
-                attributes = AttributeMap(attributes),
-            )
-        }
-        return Track(
-            trackId = key.trackId,
-            pluginId = key.pluginId,
-            libraryId = key.libraryId,
-            title = key.trackId,
-        )
-    }
-
-    private fun buildMediaItem(
-        key: TrackKey,
-        media: ResolvedMedia,
-        track: Track?,
-    ): MediaItem {
-        val metadata = MediaMetadata.Builder().apply {
-            if (media.fromDownload) {
-                media.downloadTitle?.let(::setTitle)
-                media.downloadArtist?.let(::setArtist)
-                media.downloadArtworkUrl?.let { setArtworkUri(android.net.Uri.parse(it)) }
-            } else {
-                track?.let { t ->
-                    setTitle(AttributeReader.string(t.attributes, "title") ?: t.title)
-                    val artists = t.artists
-                        ?.mapNotNull { artist ->
-                            AttributeReader.string(artist.artist.attributes, "name")
-                        }
-                        ?.takeIf { it.isNotEmpty() }
-                        ?: AttributeReader.strings(t.attributes, "artist", multiple = true)
-                    artists?.joinToString(", ")?.let { setArtist(it) }
-                    AttributeReader.resource(t.attributes, "front")?.url?.let {
-                        setArtworkUri(android.net.Uri.parse(it))
-                    }
-                }
-            }
-        }.build()
-        return MediaItem.Builder()
-            .setUri(media.url)
-            .setMediaId(key.toString())
-            .apply {
-                if (media.type == ResolvedMedia.MediaType.Stream) {
-                    setCustomCacheKey(TrackCacheKeyFactory.streamKey(key.toString()))
-                }
-            }
-            .setMediaMetadata(metadata)
-            .apply {
-                if (media.type == ResolvedMedia.MediaType.Hls) {
-                    setMimeType(MimeTypes.APPLICATION_M3U8)
-                }
-            }
-            .build()
     }
 
     private fun advanceOnEnd() {
@@ -526,15 +475,60 @@ class PlaybackController @Inject constructor(
         }
     }
 
+    private fun checkForStall() {
+        val key = _state.value.currentKey ?: return
+        if (player.playbackState != Player.STATE_BUFFERING || !player.playWhenReady) {
+            bufferingSinceMs = 0
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        if (bufferingSinceMs == 0L) {
+            bufferingSinceMs = now
+            return
+        }
+        if (now - bufferingSinceMs < STALL_TIMEOUT_MS) return
+        if (retriedFor != key.toString()) {
+            retryCurrent(key, player.currentPosition.coerceAtLeast(0))
+            return
+        }
+        bufferingSinceMs = 0
+        _state.update { it.copy(isBuffering = false, error = "Playback stalled") }
+        player.pause()
+    }
+
     private fun retryOrSkip(error: PlaybackException) {
         val key = _state.value.currentKey ?: return
+        val positionMs = player.currentPosition.coerceAtLeast(0)
         if (retriedFor != key.toString()) {
-            retriedFor = key.toString()
-            resolver.invalidate(key)
-            playCurrent()
+            retryCurrent(key, positionMs)
             return
         }
         _state.update { it.copy(isBuffering = false, error = "Playback failed") }
-        next()
+        player.pause()
+    }
+
+    private fun retryCurrent(key: TrackKey, positionMs: Long) {
+        retriedFor = key.toString()
+        bufferingSinceMs = 0
+        resolver.invalidate(key)
+        if (externalQueueMode && player.mediaItemCount > 0) {
+            val index = player.currentMediaItemIndex.coerceIn(0, player.mediaItemCount - 1)
+            val track = externalTracks[key] ?: Track(
+                trackId = key.trackId,
+                pluginId = key.pluginId,
+                libraryId = key.libraryId,
+                title = key.trackId,
+            )
+            player.replaceMediaItem(index, TrackMediaItemFactory.create(track))
+            player.prepare()
+            player.seekTo(positionMs)
+            player.play()
+        } else {
+            playCurrent(positionMs)
+        }
+    }
+
+    private companion object {
+        const val STALL_TIMEOUT_MS = 20_000L
     }
 }

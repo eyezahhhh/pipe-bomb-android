@@ -76,6 +76,7 @@ class PlaylistViewModelTest {
             downloadRepository = DownloadRepository(downloadDatabase, downloadDatabase.downloadDao()),
             connectivity = object : ConnectivityStatus {
                 override val isOnline = MutableStateFlow(true)
+                override val isMetered = MutableStateFlow(false)
             },
             authRepository = authRepository,
         )

@@ -19,7 +19,7 @@ live in `architecture.md`.
 
 | Data | Store |
 | ---- | ----- |
-| Server URL, volume, repeat/shuffle, download reserve | Preferences DataStore |
+| Server URL, volume, repeat/shuffle, download reserve, mobile-data downloads | Preferences DataStore |
 | Selected storage location and pending switch | Small synchronous SharedPreferences bootstrap |
 | Queue order, current index, position | DataStore JSON snapshot, written throttled |
 | Auth cookie | OkHttp `CookieJar` backed by app-private storage |

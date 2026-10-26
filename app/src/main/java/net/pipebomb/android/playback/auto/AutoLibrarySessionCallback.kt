@@ -16,6 +16,8 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import net.pipebomb.android.di.ApplicationScope
 import net.pipebomb.android.playback.PlaybackController
@@ -160,18 +162,19 @@ class AutoLibrarySessionCallback @Inject constructor(
         controller: MediaSession.ControllerInfo,
         mediaItems: List<MediaItem>,
     ): ListenableFuture<List<MediaItem>> {
-        val node = AutoIds.parse(mediaItems.firstOrNull()?.mediaId ?: "")
-            ?: return Futures.immediateFailedFuture(IllegalArgumentException("Unknown media id"))
         val future = SettableFuture.create<List<MediaItem>>()
         scope.launch {
-            resolveSelection(node, 0)
-                .onSuccess { queue ->
-                    val rotatedItems = queue.items.drop(queue.startIndex) + queue.items.take(queue.startIndex)
-                    val rotatedTracks = queue.tracks.drop(queue.startIndex) + queue.tracks.take(queue.startIndex)
-                    playbackController.prepareExternalQueue(rotatedTracks, 0)
-                    future.set(rotatedItems)
+            val resolved = mediaItems.map { item ->
+                val node = AutoIds.parse(item.mediaId)
+                if (node is AutoNode.Track) {
+                    dataSource.tracksByKeys(listOf(node.key)).firstOrNull()
+                        ?.let { AutoMediaItems.trackQueued(it, node.context) }
+                        ?: item
+                } else {
+                    item
                 }
-                .onFailure { future.setException(it) }
+            }
+            future.set(resolved)
         }
         return future
     }
@@ -210,7 +213,9 @@ class AutoLibrarySessionCallback @Inject constructor(
                     requestedIndex = state.currentIndex,
                     context = AutoContext.History,
                 ) ?: error("Unable to prepare resumption queue")
-                playbackController.prepareExternalQueue(resolved.tracks, resolved.startIndex)
+                withContext(Dispatchers.Main) {
+                    playbackController.prepareExternalQueue(resolved.tracks, resolved.startIndex)
+                }
                 MediaSession.MediaItemsWithStartPosition(
                     ImmutableList.copyOf(resolved.items),
                     resolved.startIndex,
@@ -233,7 +238,9 @@ class AutoLibrarySessionCallback @Inject constructor(
         }
         val resolved = queueResolver.resolve(request.tracks, request.startIndex, context)
             ?: error("Unable to resolve queue")
-        playbackController.prepareExternalQueue(resolved.tracks, resolved.startIndex)
+        withContext(Dispatchers.Main) {
+            playbackController.prepareExternalQueue(resolved.tracks, resolved.startIndex)
+        }
         resolved
     }
 }

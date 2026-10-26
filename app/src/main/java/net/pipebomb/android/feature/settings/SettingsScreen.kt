@@ -107,6 +107,31 @@ fun SettingsScreen(
             }
             InfoRow("Downloads", formatBytes(state.downloadedBytes))
             InfoRow("Cached audio", formatBytes(state.cacheBytes))
+            InfoRow(
+                "Mobile data downloads",
+                if (state.allowMobileDataDownloads) "Allowed" else "Wi-Fi only",
+            )
+            ActionRow(
+                label = if (state.allowMobileDataDownloads) {
+                    "Only download on Wi-Fi"
+                } else {
+                    "Allow downloads on mobile data"
+                },
+                onClick = {
+                    viewModel.setAllowMobileDataDownloads(!state.allowMobileDataDownloads)
+                },
+            )
+            if (state.mobileDataPaused) {
+                Text(
+                    text = "Downloads are waiting for Wi-Fi. Allow mobile data downloads or connect to Wi-Fi to continue.",
+                    style = PipeBombTheme.typography.metadata,
+                    color = PipeBombTheme.colors.warning,
+                    modifier = Modifier.padding(
+                        horizontal = PipeBombTheme.spacing.md,
+                        vertical = PipeBombTheme.spacing.sm,
+                    ),
+                )
+            }
             ActionRow("Clear cached audio", onClick = viewModel::clearCache)
             ActionRow("Remove all downloads", onClick = viewModel::removeAllDownloads)
         }

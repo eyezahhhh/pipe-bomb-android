@@ -14,10 +14,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.pipebomb.android.core.datastore.AppSettingsStore
+import net.pipebomb.android.core.net.ConnectivityStatus
 import net.pipebomb.android.data.download.DownloadRepository
 import net.pipebomb.android.data.download.DownloadState
 import net.pipebomb.android.data.storage.StorageLocationRepository
@@ -37,12 +40,15 @@ class DownloadCoordinator @Inject constructor(
     private val pins: DownloadPinRegistry,
     private val storage: StorageLocationRepository,
     private val settings: AppSettingsStore,
+    private val connectivity: ConnectivityStatus,
     private val scheduler: DownloadScheduler,
 ) {
     private val initialized = CompletableDeferred<Unit>()
     private val ready = CompletableDeferred<Unit>()
     private val _reservePaused = MutableStateFlow(false)
     val reservePaused: StateFlow<Boolean> = _reservePaused.asStateFlow()
+    private val _mobileDataPaused = MutableStateFlow(false)
+    val mobileDataPaused: StateFlow<Boolean> = _mobileDataPaused.asStateFlow()
 
     @Volatile
     private var started = false
@@ -107,22 +113,17 @@ class DownloadCoordinator @Inject constructor(
                 }
             }
             scope.launch {
-                storage.revision.collect {
-                    if (!storage.resolve().downloadsEnabled) pauseUnavailable()
+                combine(
+                    settings.allowMobileDataDownloads,
+                    connectivity.isMetered,
+                    storage.revision,
+                ) { allowMobileData, metered, _ ->
+                    !allowMobileData && metered
                 }
+                    .distinctUntilChanged()
+                    .collect { refreshAvailability() }
             }
-            val reserve = settings.downloadReserveBytes.first()
-            when {
-                !storage.resolve().downloadsEnabled || cache.storageState.isFallback -> {
-                    _reservePaused.value = false
-                }
-
-                !DownloadSpace.canStartDownload(storage.selectedAvailableBytes(), reserve) -> {
-                    _reservePaused.value = true
-                }
-
-                else -> withContext(Dispatchers.Main) { downloadManager.resumeDownloads() }
-            }
+            refreshAvailability()
             if (storage.resolve().downloadsEnabled &&
                 !cache.storageState.isFallback &&
                 rows.any { it.state == DownloadState.Queued.name || it.state == DownloadState.Pending.name }
@@ -160,9 +161,12 @@ class DownloadCoordinator @Inject constructor(
 
     suspend fun pauseForReserve() {
         _reservePaused.value = true
-        withContext(Dispatchers.Main) {
-            manager?.pauseDownloads()
-        }
+        pauseAll()
+    }
+
+    suspend fun pauseForMobileData() {
+        _mobileDataPaused.value = true
+        pauseAll()
     }
 
     suspend fun pauseAll() {
@@ -176,28 +180,26 @@ class DownloadCoordinator @Inject constructor(
         pauseAll()
     }
 
-    suspend fun resume() {
-        val reserve = settings.downloadReserveBytes.first()
-        if (!storage.resolve().downloadsEnabled ||
-            cache.storageState.isFallback ||
-            !DownloadSpace.canStartDownload(storage.selectedAvailableBytes(), reserve)
-        ) {
-            _reservePaused.value = true
-            return
-        }
-        _reservePaused.value = false
-        withContext(Dispatchers.Main) {
-            manager?.resumeDownloads()
-        }
-    }
+    suspend fun resume() = refreshAvailability()
 
-    suspend fun refreshReserveState() {
+    suspend fun refreshAvailability() {
+        val mobileBlocked = !settings.allowMobileDataDownloads.first() &&
+            connectivity.isMetered.value
+        _mobileDataPaused.value = mobileBlocked
+
+        val storageUnavailable =
+            !storage.resolve().downloadsEnabled || cache.storageState.isFallback
         val reserve = settings.downloadReserveBytes.first()
-        if (!storage.resolve().downloadsEnabled ||
-            cache.storageState.isFallback ||
+        val reserveBlocked = !storageUnavailable &&
             !DownloadSpace.canStartDownload(storage.selectedAvailableBytes(), reserve)
-        ) {
-            pauseForReserve()
+        _reservePaused.value = reserveBlocked
+
+        if (mobileBlocked || storageUnavailable || reserveBlocked) {
+            pauseAll()
+        } else {
+            withContext(Dispatchers.Main) {
+                manager?.resumeDownloads()
+            }
         }
     }
 

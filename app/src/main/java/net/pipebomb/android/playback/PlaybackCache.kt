@@ -55,7 +55,12 @@ class PlaybackCache @Inject constructor(
                 .setCache(cache)
                 .setFragmentSize(CacheDataSink.DEFAULT_FRAGMENT_SIZE),
         )
-        .setUpstreamDataSourceFactory(DefaultHttpDataSource.Factory())
+        .setUpstreamDataSourceFactory(
+            DefaultHttpDataSource.Factory()
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(30_000)
+                .setAllowCrossProtocolRedirects(true),
+        )
         .setCacheKeyFactory(TrackCacheKeyFactory(registry))
 
     fun enablePinnedEviction() {

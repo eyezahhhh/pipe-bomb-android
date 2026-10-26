@@ -14,3 +14,4 @@ change one. ADRs are append-only; supersede rather than rewrite.
 | [007](./007-android-auto-media-library.md) | Android Auto uses a MediaLibraryService with context-encoded media IDs |
 | [008](./008-downloads-and-removable-storage.md) | Downloads are pinned cache entries with selectable internal/external storage |
 | [009](./009-synchronized-collection-downloads.md) | Kept playlists/albums synchronize downloads with reference-counted release |
+| [010](./010-lazy-synthetic-track-sources.md) | Playback queues use lazy synthetic TrackKey sources and full metadata queues |

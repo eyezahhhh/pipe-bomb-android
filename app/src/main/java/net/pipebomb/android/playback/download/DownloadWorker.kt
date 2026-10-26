@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.first
 import net.pipebomb.android.MainActivity
 import net.pipebomb.android.core.datastore.AppSettingsStore
 import net.pipebomb.android.core.net.ApiResult
+import net.pipebomb.android.core.net.ConnectivityStatus
 import net.pipebomb.android.core.net.userMessage
 import net.pipebomb.android.data.download.DownloadRepository
 import net.pipebomb.android.data.download.DownloadState
@@ -42,10 +43,16 @@ class DownloadWorker @AssistedInject constructor(
     private val settings: AppSettingsStore,
     private val cache: PlaybackCache,
     private val resolver: PlaybackResolver,
+    private val connectivity: ConnectivityStatus,
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         ensureChannel()
         coordinator.awaitReady()
+
+        if (mobileDataBlocked()) {
+            coordinator.pauseForMobileData()
+            return Result.retry()
+        }
 
         val reserve = settings.downloadReserveBytes.first()
         if (!storage.resolve().downloadsEnabled || cache.storageState.isFallback) {
@@ -64,6 +71,10 @@ class DownloadWorker @AssistedInject constructor(
 
         while (true) {
             coordinator.syncProgress()
+            if (mobileDataBlocked()) {
+                coordinator.pauseForMobileData()
+                return Result.retry()
+            }
             var rows = repository.all()
             val preparedIds = coordinator.activeRequestIds().toMutableSet()
             val candidates = rows.filter {
@@ -124,6 +135,9 @@ class DownloadWorker @AssistedInject constructor(
             delay(1_000)
         }
     }
+
+    private suspend fun mobileDataBlocked(): Boolean =
+        connectivity.isMetered.value && !settings.allowMobileDataDownloads.first()
 
     private fun foregroundInfo(
         rows: List<net.pipebomb.android.data.download.DownloadEntity>,

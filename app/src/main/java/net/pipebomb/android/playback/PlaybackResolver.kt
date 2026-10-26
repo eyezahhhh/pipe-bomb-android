@@ -1,8 +1,8 @@
-
 package net.pipebomb.android.playback
 
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.net.ApiClientFactory
 import net.pipebomb.android.core.net.ApiError
@@ -12,6 +12,7 @@ import net.pipebomb.android.core.net.apiCall
 import net.pipebomb.android.core.net.rewriteServerUrl
 import net.pipebomb.android.data.download.DownloadRepository
 import net.pipebomb.android.data.storage.StorageLocationRepository
+import net.pipebomb.android.di.ApplicationScope
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,9 +38,10 @@ class PlaybackResolver @Inject constructor(
     private val sessionKeyRegistry: MediaSessionKeyRegistry,
     private val downloadRepository: DownloadRepository,
     private val storage: StorageLocationRepository,
+    @param:ApplicationScope private val scope: CoroutineScope,
 ) {
-    private val mutex = Mutex()
     private val sessions = ConcurrentHashMap<String, ResolvedMedia>()
+    private val inFlight = ConcurrentHashMap<String, Deferred<ApiResult<ResolvedMedia>>>()
 
     suspend fun resolve(key: TrackKey, forceRefresh: Boolean = false): ApiResult<ResolvedMedia> {
         downloadRepository.completed(key)?.let { download ->
@@ -63,43 +65,22 @@ class PlaybackResolver @Inject constructor(
                 ),
             )
         }
-        return mutex.withLock {
-            if (!forceRefresh) {
-                sessions[key.toString()]?.let { return@withLock ApiResult.Success(it) }
-            }
-            val result = apiCall {
-                apiClientFactory.requireApi().createAudioSession(
-                    key.pluginId,
-                    key.libraryId,
-                    key.trackId,
-                )
-            }
-            when (result) {
-                is ApiResult.Failure -> result
-                is ApiResult.Success -> {
-                    val session = result.value
-                    sessionKeyRegistry.register(session.id, key)
-                    val type = if (session.type == "hls") {
-                        ResolvedMedia.MediaType.Hls
-                    } else {
-                        ResolvedMedia.MediaType.Stream
-                    }
-                    val base = rewriteServerUrl(session.baseUrl, serverUrlProvider.current()).trimEnd('/')
-                    val url = when (type) {
-                        ResolvedMedia.MediaType.Hls -> "$base/hls/playlist.m3u8"
-                        ResolvedMedia.MediaType.Stream -> "$base/stream"
-                    }
-                    val resolved = ResolvedMedia(
-                        trackKey = key,
-                        url = url,
-                        type = type,
-                        resolvedAt = System.currentTimeMillis(),
-                        sessionId = session.id,
-                    )
-                    sessions[key.toString()] = resolved
-                    ApiResult.Success(resolved)
-                }
-            }
+
+        val id = key.toString()
+        if (!forceRefresh) {
+            sessions[id]?.takeIf { isFresh(it) }?.let { return ApiResult.Success(it) }
+        } else {
+            sessions.remove(id)
+        }
+        val request = inFlight.computeIfAbsent(id) {
+            scope.async { createSession(key) }
+        }
+        return try {
+            val result = request.await()
+            if (result is ApiResult.Success) sessions[id] = result.value
+            result
+        } finally {
+            inFlight.remove(id, request)
         }
     }
 
@@ -112,4 +93,47 @@ class PlaybackResolver @Inject constructor(
     }
 
     fun noServer(): ApiError = ApiError.Network("No server configured")
+
+    private suspend fun createSession(key: TrackKey): ApiResult<ResolvedMedia> {
+        val result = apiCall {
+            apiClientFactory.requireApi().createAudioSession(
+                key.pluginId,
+                key.libraryId,
+                key.trackId,
+            )
+        }
+        return when (result) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> {
+                val session = result.value
+                sessionKeyRegistry.register(session.id, key)
+                val type = if (session.type == "hls") {
+                    ResolvedMedia.MediaType.Hls
+                } else {
+                    ResolvedMedia.MediaType.Stream
+                }
+                val base = rewriteServerUrl(session.baseUrl, serverUrlProvider.current()).trimEnd('/')
+                val url = when (type) {
+                    ResolvedMedia.MediaType.Hls -> "$base/hls/playlist.m3u8"
+                    ResolvedMedia.MediaType.Stream -> "$base/stream"
+                }
+                ApiResult.Success(
+                    ResolvedMedia(
+                        trackKey = key,
+                        url = url,
+                        type = type,
+                        resolvedAt = System.currentTimeMillis(),
+                        sessionId = session.id,
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun isFresh(media: ResolvedMedia): Boolean =
+        System.currentTimeMillis() - media.resolvedAt < SESSION_TTL_MS
+
+    private companion object {
+        const val SESSION_TTL_MS = 10 * 60 * 1000L
+    }
 }

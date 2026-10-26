@@ -42,6 +42,8 @@ data class SettingsUiState(
     val totalBytes: Long = 0,
     val reserveBytes: Long = AppSettingsStore.DEFAULT_DOWNLOAD_RESERVE_BYTES,
     val reservePaused: Boolean = false,
+    val allowMobileDataDownloads: Boolean = false,
+    val mobileDataPaused: Boolean = false,
 )
 
 @HiltViewModel
@@ -83,6 +85,11 @@ class SettingsViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            settings.allowMobileDataDownloads.collect { allow ->
+                _state.update { it.copy(allowMobileDataDownloads = allow) }
+            }
+        }
+        viewModelScope.launch {
             storage.revision.collect { refresh() }
         }
         viewModelScope.launch {
@@ -93,6 +100,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             coordinator.reservePaused.collect { paused ->
                 _state.update { it.copy(reservePaused = paused) }
+            }
+        }
+        viewModelScope.launch {
+            coordinator.mobileDataPaused.collect { paused ->
+                _state.update { it.copy(mobileDataPaused = paused) }
             }
         }
     }
@@ -149,7 +161,18 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settings.setDownloadReserveBytes(bytes)
             coordinator.resume()
-            if (!coordinator.reservePaused.value) scheduler.schedule()
+            if (!coordinator.reservePaused.value && !coordinator.mobileDataPaused.value) {
+                scheduler.schedule()
+            }
+            refresh()
+        }
+    }
+
+    fun setAllowMobileDataDownloads(allow: Boolean) {
+        viewModelScope.launch {
+            settings.setAllowMobileDataDownloads(allow)
+            coordinator.refreshAvailability()
+            scheduler.reschedule()
             refresh()
         }
     }
@@ -157,7 +180,9 @@ class SettingsViewModel @Inject constructor(
     fun resumeDownloads() {
         viewModelScope.launch {
             coordinator.resume()
-            if (!coordinator.reservePaused.value) scheduler.schedule()
+            if (!coordinator.reservePaused.value && !coordinator.mobileDataPaused.value) {
+                scheduler.schedule()
+            }
             refresh()
         }
     }

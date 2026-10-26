@@ -38,6 +38,7 @@ reserved for real media/session behaviour and should run nightly or on a label.
 | Track identity | `app/src/test/.../core/model/TrackKeyTest.kt` | round-trip and malformed keys |
 | Track cache | `app/src/test/.../data/TrackCacheTest.kt` | TTL and clearing |
 | Media cache keys | `app/src/test/.../playback/TrackCacheKeyFactoryTest.kt` | stable progressive keys, session-free HLS paths |
+| Synthetic media items | `app/src/test/.../playback/TrackMediaUriTest.kt` and `TrackMediaItemFactoryTest.kt` | URI round-trips, metadata IDs, cache-key/MIME rewriting |
 | Offline auth | `app/src/test/.../data/AuthRepositoryTest.kt` | cached user survives network failure |
 | Download metadata | `app/src/test/.../data/download/DownloadRepositoryTest.kt` | enqueue, completion, collections, reference counts, blocked removal |
 | Download pins | `app/src/test/.../playback/download/DownloadPinRegistryTest.kt` | track-prefix pinning and unpinning |
@@ -45,8 +46,8 @@ reserved for real media/session behaviour and should run nightly or on a label.
 | Playlist windowing | `app/src/test/.../feature/playlist/PlaylistViewModelTest.kt` | first page, lazy chunk, metadata preservation |
 | History windowing | `app/src/test/.../feature/library/LibraryViewModelTest.kt` | lazy load, page mapping, no duplicate chunks |
 | Auto media IDs | `app/src/test/.../playback/auto/AutoIdsTest.kt` | context/track ID round-trip, malformed IDs |
-| Auto queue resolution | `app/src/test/.../playback/auto/AutoQueueResolverTest.kt` | queue order, start index, failure skipping, HLS MIME |
-| Auto browse integration | `app/src/androidTest/.../playback/auto/AutoBrowseTest.kt` | real MediaBrowser root/categories/saved; authenticated queue test |
+| Auto queue resolution | `app/src/test/.../playback/auto/AutoQueueResolverTest.kt` | full metadata queue, start index, no session requests |
+| Auto browse integration | `app/src/androidTest/.../playback/auto/AutoBrowseTest.kt` | real MediaBrowser root/categories/saved; authenticated full-queue, synthetic URI, and Next test |
 | Component interaction | `app/src/test/.../ui/interaction/ComponentInteractionTest.kt` | pager selection guards, mini-player swipes/tap/buffering, media action icons/loading, track long-press |
 | Visual goldens | `app/src/test/.../ui/screenshot/ComponentScreenshotTest.kt` | track rows, media actions, mini player, player sheet, design tokens |
 
@@ -73,6 +74,7 @@ reserved for real media/session behaviour and should run nightly or on a label.
 - Pure queue reducer tests (shuffle/restore, repeat, remove-current).
 - Session-expiry and retry-path tests.
 - Instrumented progressive download, airplane-mode restart, reserve pause/resume,
-  removable-storage switch, collection sync, and offline collection detail.
+  mobile-data pause/resume, removable-storage switch, collection sync, and offline
+  collection detail.
 - HLS download rejection integration coverage.
 - Tablet/foldable screenshot variants and Macrobenchmark performance baselines.

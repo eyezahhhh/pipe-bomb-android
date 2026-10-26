@@ -43,8 +43,7 @@ class AutoLibraryDataSource @Inject constructor(
                 AutoNode.SavedType.Albums -> savedAlbums(page, pageSize).mapAlbums()
                 AutoNode.SavedType.Artists -> savedArtists(page, pageSize).mapArtists()
             }
-            is AutoNode.Playlist -> playlist(node.uuid)?.tracks.orEmpty()
-                .map { it.track }
+            is AutoNode.Playlist -> playlistTracks(node.uuid)
                 .mapTracks(AutoContext.Playlist(node.uuid))
             is AutoNode.Album -> album(node.uuid)?.tracks.orEmpty()
                 .mapTracks(AutoContext.Album(node.uuid))
@@ -86,7 +85,7 @@ class AutoLibraryDataSource @Inject constructor(
 
     suspend fun tracksFor(context: AutoContext): List<Track> = when (context) {
         is AutoContext.Album -> album(context.uuid)?.tracks.orEmpty()
-        is AutoContext.Playlist -> playlist(context.uuid)?.tracks.orEmpty().map { it.track }
+        is AutoContext.Playlist -> playlistTracks(context.uuid)
         is AutoContext.Artist -> artist(context.uuid)?.tracks.orEmpty()
         AutoContext.SavedTracks -> allSavedTracks()
         AutoContext.History -> allHistoryTracks()
@@ -108,6 +107,12 @@ class AutoLibraryDataSource @Inject constructor(
 
     private suspend fun playlist(uuid: String): Playlist? =
         (catalogRepository.playlist(uuid, tracks = 200) as? ApiResult.Success)?.value
+
+    private suspend fun playlistTracks(uuid: String): List<Track> =
+        (catalogRepository.allPlaylistTracks(uuid) as? ApiResult.Success)
+            ?.value
+            ?.map { it.track }
+            .orEmpty()
 
     private suspend fun album(uuid: String): Album? =
         (catalogRepository.album(uuid) as? ApiResult.Success)?.value
@@ -131,11 +136,11 @@ class AutoLibraryDataSource @Inject constructor(
         (catalogRepository.history(page = page + 1, pageSize = pageSize) as? ApiResult.Success)
             ?.value?.entries.orEmpty().mapNotNull { it.track }
 
-    private suspend fun allSavedTracks(): List<Track> = pagedTracks(MAX_QUEUE) { page ->
+    private suspend fun allSavedTracks(): List<Track> = pagedTracks(Int.MAX_VALUE) { page ->
         savedTracks(page = page, pageSize = PAGE_SIZE)
     }
 
-    private suspend fun allHistoryTracks(): List<Track> = pagedTracks(MAX_QUEUE) { page ->
+    private suspend fun allHistoryTracks(): List<Track> = pagedTracks(Int.MAX_VALUE) { page ->
         historyTracks(page = page, pageSize = PAGE_SIZE)
     }
 
@@ -149,7 +154,7 @@ class AutoLibraryDataSource @Inject constructor(
         (catalogRepository.tracks(keys) as? ApiResult.Success)?.value.orEmpty()
 
     private suspend fun searchTracks(query: String): List<Track> =
-        (catalogRepository.search(query) as? ApiResult.Success)?.value?.tracks.orEmpty().take(MAX_QUEUE)
+        (catalogRepository.search(query) as? ApiResult.Success)?.value?.tracks.orEmpty().take(MAX_SEARCH_RESULTS)
 
     private suspend fun pagedTracks(limit: Int, fetch: suspend (Int) -> List<Track>): List<Track> {
         val result = mutableListOf<Track>()
@@ -210,7 +215,7 @@ class AutoLibraryDataSource @Inject constructor(
     private fun artworkOf(playlist: Playlist) = AttributeReader.resource(playlist.attributes, "thumb")
 
     companion object {
-        const val MAX_QUEUE = 200
+        const val MAX_SEARCH_RESULTS = 200
         private const val PAGE_SIZE = 50
         private const val ART_CONCURRENCY = 4
     }

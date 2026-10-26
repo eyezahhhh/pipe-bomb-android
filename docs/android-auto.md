@@ -53,18 +53,18 @@ saved-track, recent, and history items are playable, so Auto can start a full qu
 
 `AutoQueueResolver` expands a selected context into a playable queue:
 
-- Fetch the context tracks from `AutoLibraryDataSource`.
+- Fetch the complete ordered context from `AutoLibraryDataSource`.
 - Start at the selected track.
-- Resolve each track's audio session through `PlaybackResolver` with bounded
-  concurrency.
-- Build Media3 `MediaItem`s with the resolved URL, HLS MIME type, metadata, and stable
-  media ID.
+- Build metadata-only Media3 `MediaItem`s using the stable Auto media ID and
+  `pipebomb://track/<base64 TrackKey>` URI.
+- Load artwork only for the selected item; do not make per-track network calls while
+  building the queue.
 - Return `MediaItemsWithStartPosition` so playback starts at the selected track.
-- Skip failed tracks and adjust the start index.
+- ExoPlayer resolves a track through `LazyTrackMediaSource` when it prepares that item.
 
-V1 hard limit: 200 tracks per selection. For larger contexts a 200-track window around
-the selected item is used. Sessions are held in memory by the server; the cap avoids
-unbounded resolution work.
+There is no track-count cap and no session creation during queue construction. A
+250-track playlist returns all 250 items with zero audio-session requests. Sessions are
+created only for items ExoPlayer actually prepares.
 
 ## Phone synchronization
 
@@ -107,9 +107,12 @@ cookie.
 ## Testing
 
 - Unit: `AutoIdsTest` covers ID round-trips and malformed input.
+- Unit: `AutoQueueResolverTest` verifies a 250-track metadata-only queue creates zero
+  audio sessions.
 - Instrumented: `AutoBrowseTest` connects a real `MediaBrowser` to `PlaybackService`
-  and verifies root, category, and saved children. The queue-expansion test is skipped
-  when the test install has no authenticated catalog.
+  and verifies root, category, and saved children, plus full playlist expansion,
+  synthetic queue URIs, and Next availability when authenticated content exists. The
+  expansion tests are skipped when the test install has no authenticated catalog.
 - Manual: Desktop Head Unit (DHU) or an Auto head unit for category layout, voice
   search, artwork, next/previous, and phone-state synchronization.
 - Production Auto distribution requires Google approval; DHU is sufficient for
@@ -132,7 +135,6 @@ If the app is not listed in Android Auto:
 
 ## Follow-ups
 
-- Lazy per-item audio resolution to remove the 200-track cap.
 - Project phone queue mutations into the Auto playlist.
 - Sync Auto shuffle/repeat state into `PlaybackUiState`.
 - Full all-albums/all-artists browse endpoints.

@@ -66,6 +66,7 @@ fun LibraryScreen(
     downloads: List<DownloadItem>,
     storageAvailable: Boolean,
     reservePaused: Boolean,
+    mobileDataPaused: Boolean,
     onRetryDownload: (DownloadItem) -> Unit,
     onRemoveDownload: (DownloadItem) -> Unit,
     onResumeDownloads: () -> Unit,
@@ -183,6 +184,7 @@ fun LibraryScreen(
                 collections = collections,
                 storageAvailable = storageAvailable,
                 reservePaused = reservePaused,
+                mobileDataPaused = mobileDataPaused,
                 isOnline = isOnline,
                 accountUuid = accountUuid,
                 accountName = accountName,
@@ -203,6 +205,7 @@ private fun DownloadsTab(
     collections: List<DownloadCollectionItem>,
     storageAvailable: Boolean,
     reservePaused: Boolean,
+    mobileDataPaused: Boolean,
     isOnline: Boolean,
     accountUuid: String?,
     accountName: String?,
@@ -242,6 +245,14 @@ private fun DownloadsTab(
                     variant = PipeBombButtonVariant.Ghost,
                 )
             }
+        }
+        if (mobileDataPaused) {
+            Text(
+                text = "Downloads are waiting for Wi-Fi. Allow mobile data downloads in Settings to continue.",
+                style = PipeBombTheme.typography.metadata,
+                color = PipeBombTheme.colors.warning,
+                modifier = Modifier.padding(horizontal = PipeBombTheme.spacing.xs),
+            )
         }
         if (collections.isEmpty() && downloads.isEmpty()) {
             EmptyBox("No downloads yet")

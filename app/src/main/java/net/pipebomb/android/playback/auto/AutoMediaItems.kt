@@ -2,14 +2,13 @@ package net.pipebomb.android.playback.auto
 
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.MimeTypes
 import net.pipebomb.android.core.attributes.AttributeReader
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.model.Album
 import net.pipebomb.android.core.model.Artist
 import net.pipebomb.android.core.model.Playlist
 import net.pipebomb.android.core.model.Track
-import net.pipebomb.android.playback.ResolvedMedia
+import net.pipebomb.android.playback.TrackMediaItemFactory
 
 object AutoMediaItems {
     fun category(
@@ -33,27 +32,18 @@ object AutoMediaItems {
         )
         .build()
 
+    fun trackQueued(track: Track, context: AutoContext, artwork: ByteArray? = null): MediaItem =
+        TrackMediaItemFactory.create(
+            track = track,
+            mediaId = AutoIds.track(context, track.key),
+            artwork = artwork,
+        )
+
     fun trackBrowse(track: Track, context: AutoContext, artwork: ByteArray? = null): MediaItem =
         MediaItem.Builder()
             .setMediaId(AutoIds.track(context, track.key))
             .setMediaMetadata(trackMetadata(track, artwork))
             .build()
-
-    fun trackResolved(
-        track: Track,
-        context: AutoContext,
-        resolved: ResolvedMedia,
-        artwork: ByteArray? = null,
-    ): MediaItem = MediaItem.Builder()
-        .setMediaId(AutoIds.track(context, track.key))
-        .setUri(resolved.url)
-        .apply {
-            if (resolved.type == ResolvedMedia.MediaType.Hls) {
-                setMimeType(MimeTypes.APPLICATION_M3U8)
-            }
-        }
-        .setMediaMetadata(trackMetadata(track, artwork))
-        .build()
 
     fun album(album: Album, artwork: ByteArray? = null): MediaItem =
         category(

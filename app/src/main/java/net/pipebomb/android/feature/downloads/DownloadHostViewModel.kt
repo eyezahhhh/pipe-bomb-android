@@ -37,6 +37,7 @@ data class DownloadHostState(
     val collections: List<DownloadCollectionItem> = emptyList(),
     val storageAvailable: Boolean = true,
     val reservePaused: Boolean = false,
+    val mobileDataPaused: Boolean = false,
     val reserveBytes: Long = AppSettingsStore.DEFAULT_DOWNLOAD_RESERVE_BYTES,
     val availableBytes: Long = 0,
     val downloadedBytes: Long = 0,
@@ -55,6 +56,12 @@ sealed interface DownloadEffect {
     data class Message(val text: String) : DownloadEffect
     data class BlockedRemoval(val collectionTitles: List<String>) : DownloadEffect
 }
+
+private data class DownloadRuntimeState(
+    val reservePaused: Boolean,
+    val mobileDataPaused: Boolean,
+    val reserveBytes: Long,
+)
 
 @HiltViewModel
 class DownloadHostViewModel @Inject constructor(
@@ -78,10 +85,11 @@ class DownloadHostViewModel @Inject constructor(
     }
     private val runtimeState = combine(
         coordinator.reservePaused,
+        coordinator.mobileDataPaused,
         settings.downloadReserveBytes,
         storage.revision,
-    ) { reservePaused, reserveBytes, revision ->
-        Triple(reservePaused, reserveBytes, revision)
+    ) { reservePaused, mobileDataPaused, reserveBytes, _ ->
+        DownloadRuntimeState(reservePaused, mobileDataPaused, reserveBytes)
     }
 
     val state = combine(
@@ -96,8 +104,9 @@ class DownloadHostViewModel @Inject constructor(
             downloads = library.first,
             collections = library.second,
             storageAvailable = storage.resolve().downloadsEnabled && !cache.storageState.isFallback,
-            reservePaused = runtime.first,
-            reserveBytes = runtime.second,
+            reservePaused = runtime.reservePaused,
+            mobileDataPaused = runtime.mobileDataPaused,
+            reserveBytes = runtime.reserveBytes,
             availableBytes = storage.selectedAvailableBytes(),
             downloadedBytes = library.first.sumOf { it.entity.bytesDownloaded },
             streamedBytes = cache.sizeBytes(),
@@ -221,7 +230,9 @@ class DownloadHostViewModel @Inject constructor(
     fun resume() {
         viewModelScope.launch(Dispatchers.IO) {
             coordinator.resume()
-            if (!coordinator.reservePaused.value) scheduler.schedule()
+            if (!coordinator.reservePaused.value && !coordinator.mobileDataPaused.value) {
+                scheduler.schedule()
+            }
             refresh.update { it + 1 }
         }
     }

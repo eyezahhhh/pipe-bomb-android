@@ -47,6 +47,12 @@ class AppSettingsStore @Inject constructor(
         }
         .map { prefs -> prefs[Keys.DownloadReserveBytes] ?: DEFAULT_DOWNLOAD_RESERVE_BYTES }
 
+    val allowMobileDataDownloads: Flow<Boolean> = dataStore.data
+        .catch { error ->
+            if (error is IOException) emit(emptyPreferences()) else throw error
+        }
+        .map { prefs -> prefs[Keys.AllowMobileDataDownloads] ?: false }
+
     suspend fun setServerUrl(url: String?) {
         dataStore.edit { prefs ->
             if (url == null) {
@@ -77,10 +83,17 @@ class AppSettingsStore @Inject constructor(
         }
     }
 
+    suspend fun setAllowMobileDataDownloads(allow: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[Keys.AllowMobileDataDownloads] = allow
+        }
+    }
+
     private object Keys {
         val ServerUrl = stringPreferencesKey("server_url")
         val ServerReady = booleanPreferencesKey("server_ready")
         val DownloadReserveBytes = longPreferencesKey("download_reserve_bytes")
+        val AllowMobileDataDownloads = booleanPreferencesKey("allow_mobile_data_downloads")
     }
 
     companion object {

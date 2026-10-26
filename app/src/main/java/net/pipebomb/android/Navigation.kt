@@ -351,6 +351,7 @@ fun MainNavigation() {
                         collections = downloadState.collections,
                         storageAvailable = downloadState.storageAvailable,
                         reservePaused = downloadState.reservePaused,
+                        mobileDataPaused = downloadState.mobileDataPaused,
                         isOnline = isOnline,
                         downloadsRequestKey = downloadsRequestKey,
                         accountUuid = downloadState.accountUuid,

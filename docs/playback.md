@@ -12,8 +12,11 @@ service, or playback reporting. For caching, offline playback, and downloads rea
 | `PlaybackQueue` | Ordered `TrackKey` list, current index, shuffle/repeat state |
 | `ResolvedMedia` | `trackKey` + resolved URL + session id + `stream`/`hls` + download snapshot |
 
-- The queue never stores URLs, sessions, or resolved media.
-- Only the current track and its successor need a resolved media source.
+- The queue never stores URLs, sessions, or resolved media. Every queue item uses a
+  synthetic `pipebomb://track/<base64 TrackKey>` URI.
+- A queue may contain hundreds of metadata-only items; none creates a session during
+  queue construction.
+- `LazyTrackMediaSource` resolves a track when ExoPlayer prepares that item.
 - A session failure is recoverable: resolve again and retry once, then surface an error.
 - Changing server or account clears resolved media and queue state.
 
@@ -34,8 +37,8 @@ immediately before preparing a track; do not resolve the whole queue.
 suspend fun resolve(trackKey: TrackKey, forceRefresh: Boolean = false): ResolvedMedia
 ```
 
-- Keep a small in-memory cache of recently resolved sessions keyed by `TrackKey`.
-- Deduplicate concurrent resolves with a `Mutex`/in-flight map.
+- Keep a per-track in-memory session cache for 10 minutes.
+- Deduplicate concurrent resolves per key with an in-flight map.
 - Before creating a session, return a completed download from Room. Register its
   persisted session id and use the saved media URL so offline playback works.
 - If a download exists but its storage is unavailable, fail with a local error instead
@@ -51,11 +54,12 @@ suspend fun resolve(trackKey: TrackKey, forceRefresh: Boolean = false): Resolved
 PlaybackController (app layer)
   -> MediaSessionService (foreground, media notification)
      -> ExoPlayer
-        -> PipeBombMediaSourceFactory
-           -> PlaybackResolver
-           -> CacheDataSource.Factory
-              -> SimpleCache (single app-wide instance)
-              -> ProgressiveMediaSource | HlsMediaSource
+        -> LazyTrackMediaSourceFactory
+           -> LazyTrackMediaSource (per synthetic item)
+              -> PlaybackResolver on prepare
+              -> CacheDataSource.Factory
+                 -> SimpleCache (single app-wide instance)
+                 -> ProgressiveMediaSource | HlsMediaSource
 ```
 
 Modules: `media3-exoplayer`, `media3-exoplayer-hls`, `media3-datasource`
@@ -90,12 +94,12 @@ Port the web behaviour from `../../website/src/store/player.store.ts`:
 The web uses two audio elements and preloads the next track 10 seconds before the end.
 Media3 should reproduce the result, not the mechanism:
 
-- When the current track plays, resolve the next `TrackKey` and enqueue its
-  `MediaItem` once resolved.
+- Queue items remain synthetic; ExoPlayer asks `LazyTrackMediaSource` to resolve an
+  item when that item is prepared.
 - Use Media3 preloading (`PreloadMediaSource` or built-in next-item buffering) for a
   gapless handoff.
-- If the next resolve fails, keep playback going and show a non-blocking error; retry
-  when the user reaches that track.
+- If an item resolve fails, keep the queue intact and show a non-blocking error; retry
+  once when preparation resumes.
 - Never resolve the entire queue up front.
 
 ## Playback reporting
@@ -127,22 +131,27 @@ duration or 240 seconds, whichever is lower. Payload:
 | ------- | --------- |
 | Session resolve 404 | Refresh session, retry once, then show "Unable to play" |
 | Media URL 404/410 | Invalidate session, re-resolve, seek to last position |
-| Network loss | Keep queue; pause; retry on connectivity for user-initiated play |
-| Decode error | Skip to next with a non-blocking message; report once |
+| Buffer stall over 20s | Invalidate session, retry once at the last position, then pause |
+| Network loss | Keep queue; the stall/error path retries once, then pauses with an error |
+| Decode error | Retry once, then pause and show an error; keep the queue |
 | Cache corruption | Clear the cache entry and retry; never crash the service |
 | Auth expired | Pause and emit session-expired; playback cannot resume until login |
 
 ## Testing
 
-- Unit-test queue reducers, shuffle/restore, and reporter thresholds.
+- Unit-test synthetic URI round-trips, resolved source cache keys/MIME types, queue
+  reducers, shuffle/restore, and reporter thresholds.
 - Instrumented tests against a local server: play a `stream` producer and an `hls`
   producer, seek, background, kill the process, verify queue restore.
+- Verify that building a large queue performs no session requests and that a buffer
+  stall retries once from the last position.
 - Test session expiry by invalidating the session between resolve and play.
 - Test cache reuse and offline playback with `caching-and-downloads.md`.
 
 ## Invariants
 
 - No playback URL is exposed outside `playback/`.
-- No session id or query token appears in a cache key.
+- No session id or query token appears in a cache key or queue item URI.
 - One player, one media session, one cache instance.
-- Queue state is the source of truth for order; ExoPlayer's playlist is a projection.
+- Queue state is the source of truth for order; ExoPlayer playlist items are synthetic
+  projections of `TrackKey` values.

@@ -19,6 +19,8 @@ storage settings. Playback/session/queue behaviour lives in `playback.md`.
   evicted by that budget.
 - Downloads pause when free space reaches the user-selected reserve. The reserve is
   stored in Preferences DataStore and can be Off, a preset, or a custom MB value.
+- Downloads default to Wi-Fi only. The Settings toggle can allow downloads on metered
+  networks; collection sync metadata may still refresh on any connection.
 
 ## Cache layer
 
@@ -30,10 +32,11 @@ All playback uses `CacheDataSource`, including streaming, so cached tracks repla
 instantly and downloads reuse the same bytes.
 
 ```
-PipeBombMediaSourceFactory
-  -> CacheDataSource.Factory
-     -> SimpleCache
-     -> upstream (OkHttp / default HTTP data source)
+LazyTrackMediaSourceFactory
+  -> LazyTrackMediaSource (resolve on prepare)
+     -> CacheDataSource.Factory
+        -> SimpleCache
+        -> upstream (OkHttp / default HTTP data source)
 ```
 
 `PinnedStreamCacheEvictor` enforces the streamed-audio budget against every cache
@@ -113,7 +116,10 @@ progressive-only source resolver.
   hundreds of live server sessions.
 - Use Media3 `DownloadManager` with the explicit stream cache key.
 - Run queued work through a Hilt `CoroutineWorker` with a data-sync foreground
-  notification and network constraint.
+  notification. The WorkManager constraint is `UNMETERED` by default, or `CONNECTED`
+  when mobile-data downloads are allowed.
+- If the device moves to mobile data while downloads are disallowed, pause Media3
+  downloads until Wi-Fi returns or the setting is enabled.
 - Reconcile Room against Media3 `DownloadIndex` on startup so interrupted work cannot
   leave stale rows.
 - On a 404/410 or expired session, mark failed and let the user retry; retry resolves a
@@ -170,6 +176,7 @@ Connectivity is tracked by `ConnectivityMonitor`. The app is downloads-first off
 | Download interrupted | Keep metadata; mark failed with Retry |
 | Session expiry mid-download | Mark failed; Retry resolves a fresh session |
 | Storage full / below reserve | Pause, surface the reserve, require user action |
+| Mobile data disallowed | Pause, show the Wi-Fi wait state, keep queued work |
 | Selected SD removed | Keep metadata, block affected downloads/playback, offer retry/location change |
 | Server URL change | Clear cache and download index; keys are server-scoped |
 
@@ -184,6 +191,8 @@ Connectivity is tracked by `ConnectivityMonitor`. The app is downloads-first off
 - Verify offline Home, Downloads-first Library, local search, collection detail fallback, and blocked per-track removal.
 - Airplane-mode playback of a progressive download after process restart.
 - Reserve preflight rejection, mid-download pause, and resume after lowering reserve.
+- Mobile-data default, enabling the setting, and automatic pause when a download moves
+  from Wi-Fi to a metered network.
 - Storage switch deletes downloads/cache and starts on the new location.
 
 ## Invariants
