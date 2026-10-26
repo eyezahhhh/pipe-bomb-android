@@ -25,6 +25,12 @@ class TrackCache @Inject constructor() {
         for (track in tracks) {
             entries[track.key.toString()] = Entry(track, now)
         }
+        if (entries.size > MAX_ENTRIES) {
+            entries.entries
+                .sortedBy { it.value.fetchedAt }
+                .take(entries.size - MAX_ENTRIES)
+                .forEach { entries.remove(it.key) }
+        }
     }
 
     fun clear() {
@@ -33,5 +39,6 @@ class TrackCache @Inject constructor() {
 
     private companion object {
         const val TTL_MILLIS = 10 * 60 * 1000L
+        const val MAX_ENTRIES = 2000
     }
 }

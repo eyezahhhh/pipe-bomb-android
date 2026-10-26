@@ -503,9 +503,8 @@ private fun MiniPlayerHost(
     playbackHost: PlaybackHostViewModel,
     onOpen: () -> Unit,
 ) {
-    val currentTrack by playbackHost.currentTrack.collectAsStateWithLifecycle()
-    if (currentTrack == null) return
     val queueState by playbackHost.queueState.collectAsStateWithLifecycle()
+    if (queueState.queue.isEmpty()) return
     val tracksByKey by playbackHost.queueTracks.collectAsStateWithLifecycle()
     val isPlaying by playbackHost.isPlaying.collectAsStateWithLifecycle()
     val isBuffering by playbackHost.isBuffering.collectAsStateWithLifecycle()

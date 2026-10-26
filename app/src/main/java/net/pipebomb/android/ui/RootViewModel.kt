@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import net.pipebomb.android.core.datastore.AppSettingsStore
@@ -29,13 +30,15 @@ class RootViewModel @Inject constructor(
 ) : ViewModel() {
     init {
         viewModelScope.launch {
-            settings.serverConfig.collect { config ->
-                if (!config.isReady) {
-                    authRepository.clearSession()
-                } else if (authRepository.session.value is SessionState.Unknown) {
-                    authRepository.refresh()
+            settings.serverConfig
+                .distinctUntilChanged()
+                .collect { config ->
+                    if (!config.isReady) {
+                        authRepository.clearSession()
+                    } else if (authRepository.session.value is SessionState.Unknown) {
+                        authRepository.refresh()
+                    }
                 }
-            }
         }
     }
 

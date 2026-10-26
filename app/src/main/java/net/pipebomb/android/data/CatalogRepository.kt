@@ -1,5 +1,7 @@
 package net.pipebomb.android.data
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import net.pipebomb.android.core.model.Album
 import net.pipebomb.android.core.model.Artist
 import net.pipebomb.android.core.model.EphemeralSearchDto
@@ -32,6 +34,8 @@ class CatalogRepository @Inject constructor(
     private val apiClientFactory: ApiClientFactory,
     private val trackCache: TrackCache,
 ) {
+    private val fetchMutex = Mutex()
+
     suspend fun savedTracks(page: Int, pageSize: Int): ApiResult<SavedTracks> =
         apiCall {
             apiClientFactory.requireApi().getSavedTracks(pageSize = pageSize, page = page)
@@ -57,22 +61,30 @@ class CatalogRepository @Inject constructor(
             return ApiResult.Success(unique.mapNotNull(cached::get))
         }
 
-        val fetched = mutableListOf<Track>()
-        for (chunk in missing.chunked(MAX_BATCH)) {
-            when (val result = apiCall {
-                apiClientFactory.requireApi().getTracks(
-                    TrackIdsDto(
-                        chunk.map { TrackIdDto(it.pluginId, it.libraryId, it.trackId) },
-                    ),
-                )
-            }) {
-                is ApiResult.Failure -> return result
-                is ApiResult.Success -> fetched += result.value
+        return fetchMutex.withLock {
+            val freshCached = missing.mapNotNull { key -> trackCache.get(key)?.let { key to it } }.toMap()
+            val stillMissing = missing.filterNot(freshCached::containsKey)
+            if (stillMissing.isEmpty()) {
+                return@withLock ApiResult.Success(unique.mapNotNull((cached + freshCached)::get))
             }
+
+            val fetched = mutableListOf<Track>()
+            for (chunk in stillMissing.chunked(MAX_BATCH)) {
+                when (val result = apiCall {
+                    apiClientFactory.requireApi().getTracks(
+                        TrackIdsDto(
+                            chunk.map { TrackIdDto(it.pluginId, it.libraryId, it.trackId) },
+                        ),
+                    )
+                }) {
+                    is ApiResult.Failure -> return@withLock result
+                    is ApiResult.Success -> fetched += result.value
+                }
+            }
+            trackCache.putAll(fetched)
+            val byKey = cached + freshCached + fetched.associateBy { it.key }
+            ApiResult.Success(unique.mapNotNull(byKey::get))
         }
-        trackCache.putAll(fetched)
-        val byKey = cached + fetched.associateBy { it.key }
-        return ApiResult.Success(unique.mapNotNull(byKey::get))
     }
 
     suspend fun track(key: TrackKey): ApiResult<Track> =

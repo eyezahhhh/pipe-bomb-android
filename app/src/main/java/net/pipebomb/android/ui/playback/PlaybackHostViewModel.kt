@@ -141,16 +141,19 @@ class PlaybackHostViewModel @Inject constructor(
             .filter { _queueTracks.value[it] == null && tracksInFlight.add(it) }
         if (keys.isEmpty()) return
         viewModelScope.launch {
-            when (val result = catalogRepository.tracks(keys)) {
-                is ApiResult.Success -> {
-                    _queueTracks.update { current ->
-                        current + result.value.associateBy { it.key }
+            try {
+                when (val result = catalogRepository.tracks(keys)) {
+                    is ApiResult.Success -> {
+                        _queueTracks.update { current ->
+                            current + result.value.associateBy { it.key }
+                        }
                     }
-                }
 
-                is ApiResult.Failure -> Unit
+                    is ApiResult.Failure -> Unit
+                }
+            } finally {
+                keys.forEach(tracksInFlight::remove)
             }
-            keys.forEach(tracksInFlight::remove)
         }
     }
 

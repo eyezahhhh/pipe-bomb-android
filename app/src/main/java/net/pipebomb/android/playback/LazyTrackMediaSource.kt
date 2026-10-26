@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.source.ForwardingTimeline
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.exoplayer.source.MediaPeriod
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.SinglePeriodTimeline
 import androidx.media3.exoplayer.upstream.Allocator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +84,9 @@ private class LazyTrackMediaSource(
                 when (result) {
                     is net.pipebomb.android.core.net.ApiResult.Failure -> {
                         resolutionError = IOException(result.error.userMessage())
+                        refreshSourceInfo(
+                            SinglePeriodTimeline(C.TIME_UNSET, false, false, false, null, mediaItem),
+                        )
                     }
 
                     is net.pipebomb.android.core.net.ApiResult.Success -> {

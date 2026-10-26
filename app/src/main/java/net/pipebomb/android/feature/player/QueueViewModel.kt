@@ -75,7 +75,7 @@ class QueueViewModel @Inject constructor(
         }
     }
 
-    fun playIndex(index: Int) = controller.play(controller.state.value.queue, index)
+    fun playIndex(index: Int) = controller.playIndex(index)
     fun clear() = controller.clearQueue()
     fun remove(index: Int) = controller.removeFromQueue(index)
 }

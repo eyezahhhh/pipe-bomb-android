@@ -24,6 +24,7 @@ private val Context.playbackDataStore: DataStore<Preferences> by preferencesData
 @Serializable
 data class PlaybackSnapshot(
     val queue: List<TrackIdDto> = emptyList(),
+    val originalQueue: List<TrackIdDto> = emptyList(),
     val currentIndex: Int = 0,
     val positionMs: Long = 0,
     val shuffle: Boolean = false,

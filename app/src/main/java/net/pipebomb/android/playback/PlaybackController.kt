@@ -19,9 +19,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -79,6 +82,7 @@ class PlaybackController @Inject constructor(
     private var playRequestId = 0L
     private var externalQueueMode = false
     private var externalTracks: Map<TrackKey, Track> = emptyMap()
+    private var positionTicker: Job? = null
 
     val player: ExoPlayer by lazy {
         ExoPlayer.Builder(context)
@@ -153,14 +157,28 @@ class PlaybackController @Inject constructor(
         scope.launch {
             val snapshot = queueStore.snapshot.first()
             if (snapshot != null && snapshot.queue.isNotEmpty()) {
+                val queue = snapshot.queue.map { TrackKey(it.pluginId, it.libraryId, it.trackId) }
+                val index = snapshot.currentIndex.coerceIn(queue.indices)
+                originalQueue = snapshot.originalQueue
+                    .map { TrackKey(it.pluginId, it.libraryId, it.trackId) }
+                    .takeIf { it.size == queue.size }
+                    ?: queue
                 _state.value = PlaybackUiState(
-                    queue = snapshot.queue.map { TrackKey(it.pluginId, it.libraryId, it.trackId) },
-                    currentIndex = snapshot.currentIndex.coerceAtLeast(0),
+                    queue = queue,
+                    currentIndex = index,
                     positionMs = snapshot.positionMs.coerceAtLeast(0),
                     shuffle = snapshot.shuffle,
                     repeat = runCatching { RepeatMode.valueOf(snapshot.repeat) }
                         .getOrDefault(RepeatMode.Off),
                 )
+                queue.getOrNull(index)?.let { key ->
+                    _currentTrack.value = resolveTrack(key) ?: Track(
+                        trackId = key.trackId,
+                        pluginId = key.pluginId,
+                        libraryId = key.libraryId,
+                        title = key.trackId,
+                    )
+                }
             }
             restored = true
         }
@@ -175,6 +193,9 @@ class PlaybackController @Inject constructor(
                             queue = state.queue.map {
                                 TrackIdDto(it.pluginId, it.libraryId, it.trackId)
                             },
+                            originalQueue = originalQueue.map {
+                                TrackIdDto(it.pluginId, it.libraryId, it.trackId)
+                            },
                             currentIndex = state.currentIndex,
                             positionMs = state.positionMs,
                             shuffle = state.shuffle,
@@ -185,22 +206,36 @@ class PlaybackController @Inject constructor(
             }
         }
         scope.launch {
+            _state
+                .map { it.isPlaying || it.isBuffering }
+                .distinctUntilChanged()
+                .collect { active ->
+                    if (active) startPositionTicker() else stopPositionTicker()
+                }
+        }
+    }
+
+    private fun startPositionTicker() {
+        if (positionTicker?.isActive == true) return
+        positionTicker = scope.launch {
             while (true) {
                 delay(500)
-                val current = _state.value
-                if (current.isPlaying || current.isBuffering) {
-                    withContext(Dispatchers.Main) {
-                        _state.update {
-                            it.copy(
-                                positionMs = player.currentPosition.coerceAtLeast(0),
-                                durationMs = player.duration.coerceAtLeast(0),
-                            )
-                        }
-                        checkForStall()
+                withContext(Dispatchers.Main) {
+                    _state.update {
+                        it.copy(
+                            positionMs = player.currentPosition.coerceAtLeast(0),
+                            durationMs = player.duration.coerceAtLeast(0),
+                        )
                     }
+                    checkForStall()
                 }
             }
         }
+    }
+
+    private fun stopPositionTicker() {
+        positionTicker?.cancel()
+        positionTicker = null
     }
 
     fun play(keys: List<TrackKey>, startIndex: Int = 0) {
@@ -255,28 +290,30 @@ class PlaybackController @Inject constructor(
             )
         }
         _currentTrack.value = tracks.getOrNull(index)
-        player.repeatMode = when (_state.value.repeat) {
-            RepeatMode.Off -> Player.REPEAT_MODE_OFF
-            RepeatMode.All -> Player.REPEAT_MODE_ALL
-            RepeatMode.One -> Player.REPEAT_MODE_ONE
-        }
+        applyRepeatMode()
     }
 
     fun addToQueue(keys: List<TrackKey>) {
         if (keys.isEmpty()) return
+        val wasEmpty = _state.value.queue.isEmpty()
         _state.update { it.copy(queue = it.queue + keys) }
-        if (_state.value.queue.size == keys.size) {
+        originalQueue = originalQueue + keys
+        if (wasEmpty) {
             playCurrent()
         }
     }
 
     fun playNext(keys: List<TrackKey>) {
         if (keys.isEmpty()) return
+        val currentIndex = _state.value.currentIndex
         _state.update { current ->
             val queue = current.queue.toMutableList()
             queue.addAll((current.currentIndex + 1).coerceAtMost(queue.size), keys)
             current.copy(queue = queue)
         }
+        val original = originalQueue.toMutableList()
+        original.addAll((currentIndex + 1).coerceAtMost(original.size), keys)
+        originalQueue = original
     }
 
     fun playNext(key: TrackKey) = playNext(listOf(key))
@@ -286,10 +323,19 @@ class PlaybackController @Inject constructor(
             playCurrent(_state.value.positionMs)
             return
         }
-        if (player.isPlaying) player.pause() else player.play()
+        if (player.isPlaying) {
+            player.pause()
+            return
+        }
+        resetRetry()
+        if (player.playbackState == Player.STATE_ENDED) {
+            player.seekTo(0)
+        }
+        player.play()
     }
 
     fun next() {
+        resetRetry()
         if (externalQueueMode && player.mediaItemCount > 1) {
             player.seekToNextMediaItem()
             return
@@ -307,6 +353,7 @@ class PlaybackController @Inject constructor(
     }
 
     fun previous() {
+        resetRetry()
         if (externalQueueMode && player.mediaItemCount > 1) {
             player.seekToPreviousMediaItem()
             return
@@ -325,6 +372,7 @@ class PlaybackController @Inject constructor(
     }
 
     fun previousTrack() {
+        resetRetry()
         val index = _state.value.currentIndex
         if (index > 0) {
             _state.update { it.copy(currentIndex = index - 1) }
@@ -349,36 +397,46 @@ class PlaybackController @Inject constructor(
                 },
             )
         }
-        player.repeatMode = when (_state.value.repeat) {
-            RepeatMode.Off -> Player.REPEAT_MODE_OFF
-            RepeatMode.All -> Player.REPEAT_MODE_ALL
-            RepeatMode.One -> Player.REPEAT_MODE_ONE
+        applyRepeatMode()
+    }
+
+    private fun applyRepeatMode() {
+        player.repeatMode = if (externalQueueMode) {
+            when (_state.value.repeat) {
+                RepeatMode.Off -> Player.REPEAT_MODE_OFF
+                RepeatMode.All -> Player.REPEAT_MODE_ALL
+                RepeatMode.One -> Player.REPEAT_MODE_ONE
+            }
+        } else {
+            Player.REPEAT_MODE_OFF
         }
     }
 
     fun toggleShuffle() {
-        _state.update { current ->
-            if (current.shuffle) {
-                val currentKey = current.currentKey
-                val restored = if (originalQueue.isNotEmpty()) originalQueue else current.queue
-                current.copy(
+        val current = _state.value
+        if (current.shuffle) {
+            val currentKey = current.currentKey
+            val restored = if (originalQueue.isNotEmpty()) originalQueue else current.queue
+            _state.update {
+                it.copy(
                     shuffle = false,
                     queue = restored,
-                    currentIndex = restored.indexOf(currentKey).takeIf { it >= 0 }
-                        ?: current.currentIndex,
+                    currentIndex = restored.indexOf(currentKey).takeIf { idx -> idx >= 0 }
+                        ?: it.currentIndex,
                 )
-            } else {
-                originalQueue = current.queue
-                val before = current.queue.take(current.currentIndex + 1)
-                val after = current.queue.drop(current.currentIndex + 1).shuffled()
-                current.copy(shuffle = true, queue = before + after)
             }
+        } else {
+            originalQueue = current.queue
+            val before = current.queue.take(current.currentIndex + 1)
+            val after = current.queue.drop(current.currentIndex + 1).shuffled()
+            _state.update { it.copy(shuffle = true, queue = before + after) }
         }
     }
 
     fun removeFromQueue(index: Int) {
         val current = _state.value
         if (index !in current.queue.indices) return
+        val removedKey = current.queue[index]
         val newQueue = current.queue.toMutableList().apply { removeAt(index) }
         if (newQueue.isEmpty()) {
             clearQueue()
@@ -387,12 +445,20 @@ class PlaybackController @Inject constructor(
         if (index == current.currentIndex) {
             play(newQueue, index.coerceAtMost(newQueue.lastIndex))
         } else {
+            removeFromOriginalQueue(removedKey)
             _state.update {
                 it.copy(
                     queue = newQueue,
                     currentIndex = if (index < it.currentIndex) it.currentIndex - 1 else it.currentIndex,
                 )
             }
+        }
+    }
+
+    private fun removeFromOriginalQueue(key: TrackKey) {
+        originalQueue = originalQueue.toMutableList().apply {
+            val idx = indexOfFirst { it == key }
+            if (idx >= 0) removeAt(idx)
         }
     }
 
@@ -415,21 +481,13 @@ class PlaybackController @Inject constructor(
         scope.launch {
             _state.update { it.copy(isBuffering = true, error = null) }
             withContext(Dispatchers.Main) { player.pause() }
-            val fetchedTrack = (catalogRepository.tracks(listOf(key)) as? ApiResult.Success)
-                ?.value
-                ?.firstOrNull()
-            val downloadedTrack = if (fetchedTrack == null) {
-                downloadRepository.completed(key)?.toTrack()
-            } else {
-                null
-            }
-            if (requestId != playRequestId) return@launch
-            val track = fetchedTrack ?: downloadedTrack ?: Track(
+            val track = resolveTrack(key) ?: Track(
                 trackId = key.trackId,
                 pluginId = key.pluginId,
                 libraryId = key.libraryId,
                 title = key.trackId,
             )
+            if (requestId != playRequestId) return@launch
             _currentTrack.value = track
             val item = TrackMediaItemFactory.create(track)
             withContext(Dispatchers.Main) {
@@ -437,6 +495,7 @@ class PlaybackController @Inject constructor(
                 context.startService(Intent(context, PlaybackService::class.java))
                 player.setMediaItem(item)
                 player.prepare()
+                player.repeatMode = Player.REPEAT_MODE_OFF
                 if (startPositionMs > 0) player.seekTo(startPositionMs)
                 player.play()
                 _state.update {
@@ -448,6 +507,13 @@ class PlaybackController @Inject constructor(
                 }
             }
         }
+    }
+
+    private suspend fun resolveTrack(key: TrackKey): Track? {
+        val fetched = (catalogRepository.tracks(listOf(key)) as? ApiResult.Success)
+            ?.value
+            ?.firstOrNull()
+        return fetched ?: downloadRepository.completed(key)?.toTrack()
     }
 
     private fun advanceOnEnd() {
@@ -473,6 +539,11 @@ class PlaybackController @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun resetRetry() {
+        retriedFor = null
+        bufferingSinceMs = 0
     }
 
     private fun checkForStall() {
