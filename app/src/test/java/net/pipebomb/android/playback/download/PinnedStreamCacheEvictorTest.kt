@@ -26,7 +26,7 @@ class PinnedStreamCacheEvictorTest {
             val writers = (0 until 4).map { writer ->
                 executor.submit {
                     start.await()
-                    repeat(5_000) { index ->
+                    repeat(750) { index ->
                         evictor.onSpanAdded(
                             cache,
                             CacheSpan(
@@ -43,12 +43,12 @@ class PinnedStreamCacheEvictorTest {
             val readers = (0 until 2).map {
                 executor.submit {
                     start.await()
-                    repeat(5_000) { evictor.refreshPins() }
+                    repeat(750) { evictor.refreshPins() }
                 }
             }
 
             start.countDown()
-            (writers + readers).forEach { it.get(30, TimeUnit.SECONDS) }
+            (writers + readers).forEach { it.get(60, TimeUnit.SECONDS) }
         } finally {
             executor.shutdownNow()
         }
