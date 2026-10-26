@@ -19,8 +19,12 @@ class CollectionSyncScheduler @Inject constructor(
     @param:ApplicationContext private val context: Context,
 ) {
     fun schedulePeriodic() {
+        val data = Data.Builder()
+            .putBoolean(CollectionSyncWorker.KEY_RETRY_FAILED, true)
+            .build()
         val request = PeriodicWorkRequestBuilder<CollectionSyncWorker>(6, TimeUnit.HOURS)
             .setConstraints(networkConstraints())
+            .setInputData(data)
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PERIODIC_WORK_NAME,

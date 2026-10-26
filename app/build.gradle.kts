@@ -1,12 +1,56 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
-  alias(libs.plugins.android.application)
-  alias(libs.plugins.compose.compiler)
-  alias(libs.plugins.kotlin.serialization)
-  alias(libs.plugins.hilt)
-  alias(libs.plugins.ksp)
-  alias(libs.plugins.roborazzi)
-  alias(libs.plugins.kover)
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.roborazzi)
+    alias(libs.plugins.kover)
 }
+
+val keystorePropertiesFile = sequenceOf(
+    rootProject.file("keystore.properties"),
+    File(System.getProperty("user.home"), ".config/pipebomb-android/keystore.properties"),
+).firstOrNull { it.isFile }
+val keystoreProperties = Properties().apply {
+    keystorePropertiesFile?.inputStream()?.use(::load)
+}
+
+fun signingValue(environmentName: String, propertyName: String): String? =
+    System.getenv(environmentName)?.takeIf { it.isNotBlank() }
+        ?: keystoreProperties.getProperty(propertyName)?.takeIf { it.isNotBlank() }
+
+val releaseStorePath = signingValue("ANDROID_KEYSTORE_FILE", "storeFile")
+val releaseStorePassword = signingValue("ANDROID_KEYSTORE_PASSWORD", "storePassword")
+val releaseKeyAlias = signingValue("ANDROID_KEY_ALIAS", "keyAlias")
+val releaseKeyPassword = signingValue("ANDROID_KEY_PASSWORD", "keyPassword")
+val releaseStoreFile = releaseStorePath?.let { rootProject.file(it) }
+val releaseSigningConfigured =
+    releaseStoreFile?.isFile == true &&
+        listOf(releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all {
+            !it.isNullOrBlank()
+        }
+val releaseTaskRequested = gradle.startParameter.taskNames.any {
+    val name = it.substringAfterLast(':')
+    name == "assembleRelease" || name == "bundleRelease"
+}
+if (releaseTaskRequested) {
+    check(releaseSigningConfigured) {
+        "Release signing is not configured. Add ~/.config/pipebomb-android/keystore.properties " +
+            "or set ANDROID_KEYSTORE_FILE, ANDROID_KEYSTORE_PASSWORD, " +
+            "ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD."
+    }
+}
+
+val appVersionCode = providers.gradleProperty("versionCode").orNull
+    ?.toIntOrNull()
+    ?: 2
+val appVersionName = providers.gradleProperty("versionName").orNull
+    ?.takeIf { it.isNotBlank() }
+    ?: "0.2.0"
 
 android {
     namespace = "net.pipebomb.android"
@@ -15,13 +59,25 @@ android {
         applicationId = "net.pipebomb.android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
+    }
+
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

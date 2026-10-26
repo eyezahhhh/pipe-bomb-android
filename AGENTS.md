@@ -19,6 +19,7 @@ same product, not stock Material 3.
 | Metadata, artwork, attribute fallbacks | `./docs/attributes.md` |
 | Code style and package rules | `./docs/conventions.md` |
 | Build, test, install, emulator commands | `./docs/commands.md` |
+| Signing, versioning, APK updates | `./docs/releasing.md` |
 | Test layout and coverage | `./docs/testing.md` |
 | Why a major decision was made | `./docs/adr/README.md` |
 
@@ -51,6 +52,8 @@ same product, not stock Material 3.
 - Cleartext HTTP is allowed only because the user supplies the server URL; warn on
   `http` and never ship a hardcoded plaintext endpoint.
 - Minimum touch target is 48dp even when the web control is visually smaller.
+- Release APKs use one stable signing key; never commit keystores or passwords. Bump
+  `versionCode` for every published release.
 - Quality gate: `./gradlew lintDebug verifyRoborazziDebug koverHtmlReportDebug assembleDebug`.
 
 ## Reference material

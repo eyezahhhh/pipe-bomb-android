@@ -108,6 +108,9 @@ progressive-only source resolver.
   retain downloads and show a sync error. Account mismatch skips sync.
 - Playlist and album screens open the ordered local snapshot when offline or when the
   server cannot be reached.
+- Each 6-hour pass requeues every `Failed` manual or collection download before syncing.
+- Collection subscription actions are serialized. Starting a second playlist while the
+  first is being prepared queues it instead of silently dropping it.
 
 **Downloading**
 
@@ -122,6 +125,11 @@ progressive-only source resolver.
   downloads until Wi-Fi returns or the setting is enabled.
 - Reconcile Room against Media3 `DownloadIndex` on startup so interrupted work cannot
   leave stale rows.
+- Re-enqueue downloads whenever `Pending`, `Queued`, `Downloading`, or `Paused` rows
+  exist: on startup, network recovery, collection sync, opening Downloads, and through
+  a 15-minute watchdog. Re-enqueueing uses `KEEP` so checks do not create duplicates.
+- Failed downloads are not retried by the 15-minute pump. They wait for the 6-hour
+  collection pass or a manual Retry.
 - On a 404/410 or expired session, mark failed and let the user retry; retry resolves a
   fresh session.
 
@@ -173,7 +181,7 @@ Connectivity is tracked by `ConnectivityMonitor`. The app is downloads-first off
 | Failure | Behaviour |
 | ------- | --------- |
 | Cache corruption | Clear the entry and retry; never crash the service |
-| Download interrupted | Keep metadata; mark failed with Retry |
+| Download interrupted | Keep metadata; mark failed with Retry; the 6-hour pass requeues it |
 | Session expiry mid-download | Mark failed; Retry resolves a fresh session |
 | Storage full / below reserve | Pause, surface the reserve, require user action |
 | Mobile data disallowed | Pause, show the Wi-Fi wait state, keep queued work |
@@ -193,6 +201,9 @@ Connectivity is tracked by `ConnectivityMonitor`. The app is downloads-first off
 - Reserve preflight rejection, mid-download pause, and resume after lowering reserve.
 - Mobile-data default, enabling the setting, and automatic pause when a download moves
   from Wi-Fi to a metered network.
+- Resume after process death with `Paused` or `Downloading` rows.
+- Two overlapping playlist subscriptions, including the same track in both.
+- Failed manual and collection downloads requeued by the periodic pass.
 - Storage switch deletes downloads/cache and starts on the new location.
 
 ## Invariants

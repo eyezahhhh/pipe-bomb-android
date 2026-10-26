@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import net.pipebomb.android.core.datastore.AppSettingsStore
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.data.AuthRepository
@@ -76,7 +77,7 @@ class DownloadHostViewModel @Inject constructor(
     private val authRepository: AuthRepository,
 ) : ViewModel() {
     private val refresh = MutableStateFlow(0L)
-    private val bulkInProgress = MutableStateFlow(false)
+    private val subscriptions = CollectionSubscriptionQueue(viewModelScope)
     private val _effects = Channel<DownloadEffect>(Channel.BUFFERED)
     val effects = _effects.receiveAsFlow()
 
@@ -96,7 +97,7 @@ class DownloadHostViewModel @Inject constructor(
         libraryState,
         runtimeState,
         refresh,
-        bulkInProgress,
+        subscriptions.isBusy,
         authRepository.session,
     ) { library, runtime, _, bulk, sessionValue ->
         val session = sessionValue as? SessionState.Authenticated
@@ -124,6 +125,9 @@ class DownloadHostViewModel @Inject constructor(
 
     init {
         collectionSync.syncNow()
+        viewModelScope.launch(Dispatchers.IO) {
+            coordinator.ensureDownloadsScheduled()
+        }
     }
 
     fun start(track: Track) {
@@ -139,13 +143,12 @@ class DownloadHostViewModel @Inject constructor(
     }
 
     fun subscribeCollection(draft: DownloadCollectionDraft, tracks: List<Track>) {
-        if (bulkInProgress.value) return
-        viewModelScope.launch(Dispatchers.IO) {
-            bulkInProgress.value = true
-            try {
+        val collectionId = draft.type.collectionId(draft.sourceId)
+        val accepted = subscriptions.enqueue(collectionId) {
+            withContext(Dispatchers.IO) {
                 when (val result = starter.subscribeCollection(draft, tracks)) {
                     is CollectionStartResult.Started -> {
-                        collectionSync.syncNow(draft.type.collectionId(draft.sourceId))
+                        collectionSync.syncNow(collectionId)
                         val suffix = if (result.skipped > 0) {
                             " · ${result.skipped} already present"
                         } else {
@@ -156,10 +159,13 @@ class DownloadHostViewModel @Inject constructor(
 
                     is CollectionStartResult.Error -> send(result.message)
                 }
-            } finally {
-                bulkInProgress.value = false
-                refresh.update { it + 1 }
             }
+            refresh.update { it + 1 }
+        }
+        if (accepted) {
+            _effects.trySend(DownloadEffect.Message("Preparing ${draft.title}"))
+        } else {
+            _effects.trySend(DownloadEffect.Message("${draft.title} is already being prepared"))
         }
     }
 
@@ -230,9 +236,6 @@ class DownloadHostViewModel @Inject constructor(
     fun resume() {
         viewModelScope.launch(Dispatchers.IO) {
             coordinator.resume()
-            if (!coordinator.reservePaused.value && !coordinator.mobileDataPaused.value) {
-                scheduler.schedule()
-            }
             refresh.update { it + 1 }
         }
     }

@@ -51,6 +51,8 @@ class DownloadRepository @Inject constructor(
 
     suspend fun pending(): List<DownloadEntity> = dao.getPending()
 
+    suspend fun hasIncompleteDownloads(): Boolean = dao.incompleteCount() > 0
+
     suspend fun enqueue(track: Track, media: ResolvedMedia): DownloadEntity {
         val existing = dao.get(track.key.toString())
         val entity = track.toDownloadEntity(
@@ -402,20 +404,31 @@ class DownloadRepository @Inject constructor(
             for (membership in dao.getCollectionTracks(collectionId)) {
                 val download = dao.get(membership.trackKey) ?: continue
                 if (download.state != DownloadState.Failed.name) continue
-                dao.upsert(
-                    download.copy(
-                        state = DownloadState.Pending.name,
-                        sessionId = "",
-                        mediaUrl = "",
-                        lastError = null,
-                        bytesDownloaded = 0,
-                        bytesTotal = 0,
-                    ),
-                )
+                dao.upsert(download.toPendingRetry())
                 retried++
             }
             retried
         }
+
+    suspend fun retryFailedDownloads(accountUuid: String?): Int =
+        database.withTransaction {
+            val retryable = dao.getFailed().filter { download ->
+                download.manual || dao.getCollectionsForTrack(download.trackKey).any {
+                    it.accountUuid == null || it.accountUuid == accountUuid
+                }
+            }
+            retryable.forEach { dao.upsert(it.toPendingRetry()) }
+            retryable.size
+        }
+
+    private fun DownloadEntity.toPendingRetry(): DownloadEntity = copy(
+        state = DownloadState.Pending.name,
+        sessionId = "",
+        mediaUrl = "",
+        lastError = null,
+        bytesDownloaded = 0,
+        bytesTotal = 0,
+    )
 
     suspend fun collectionsForTrack(trackKey: String): List<DownloadCollectionEntity> =
         dao.getCollectionsForTrack(trackKey)

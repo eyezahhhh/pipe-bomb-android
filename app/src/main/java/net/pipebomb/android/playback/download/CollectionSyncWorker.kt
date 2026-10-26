@@ -39,10 +39,16 @@ class CollectionSyncWorker @AssistedInject constructor(
             repository.getCollection(id)?.let(::listOf).orEmpty()
         } ?: repository.getCollections()
 
+        if (inputData.getBoolean(KEY_RETRY_FAILED, false)) {
+            val retried = repository.retryFailedDownloads(user.uuid)
+            if (retried > 0) downloadScheduler.schedule()
+        }
+
         for (collection in collections) {
             if (collection.accountUuid != null && collection.accountUuid != user.uuid) continue
             syncCollection(collection, user.uuid, user.username)
         }
+        coordinator.ensureDownloadsScheduled()
         return Result.success()
     }
 
@@ -138,7 +144,7 @@ class CollectionSyncWorker @AssistedInject constructor(
             cache.removeTrack(key)
             coordinator.remove(key)
         }
-        if (result.pendingCreated > 0) downloadScheduler.schedule()
+        if (repository.hasIncompleteDownloads()) downloadScheduler.schedule()
     }
 
     private suspend fun handleFailure(
@@ -159,5 +165,6 @@ class CollectionSyncWorker @AssistedInject constructor(
 
     companion object {
         const val KEY_COLLECTION_ID = "collection_id"
+        const val KEY_RETRY_FAILED = "retry_failed"
     }
 }

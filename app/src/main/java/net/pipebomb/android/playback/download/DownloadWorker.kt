@@ -48,9 +48,10 @@ class DownloadWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         ensureChannel()
         coordinator.awaitReady()
+        coordinator.refreshAvailability()
 
-        if (mobileDataBlocked()) {
-            coordinator.pauseForMobileData()
+        if (networkBlocked()) {
+            coordinator.pauseAll()
             return Result.retry()
         }
 
@@ -71,15 +72,19 @@ class DownloadWorker @AssistedInject constructor(
 
         while (true) {
             coordinator.syncProgress()
-            if (mobileDataBlocked()) {
-                coordinator.pauseForMobileData()
+            if (networkBlocked()) {
+                coordinator.pauseAll()
                 return Result.retry()
             }
             var rows = repository.all()
             val preparedIds = coordinator.activeRequestIds().toMutableSet()
             val candidates = rows.filter {
                 it.state == DownloadState.Pending.name ||
-                    (it.state == DownloadState.Queued.name && it.trackKey !in preparedIds)
+                    (
+                        (it.state == DownloadState.Queued.name ||
+                            it.state == DownloadState.Paused.name) &&
+                            it.trackKey !in preparedIds
+                        )
             }
             for (row in candidates) {
                 if (preparedIds.size >= MAX_PREPARED) break
@@ -136,8 +141,10 @@ class DownloadWorker @AssistedInject constructor(
         }
     }
 
-    private suspend fun mobileDataBlocked(): Boolean =
-        connectivity.isMetered.value && !settings.allowMobileDataDownloads.first()
+    private suspend fun networkBlocked(): Boolean =
+        !connectivity.isOnline.value || (
+            connectivity.isMetered.value && !settings.allowMobileDataDownloads.first()
+            )
 
     private fun foregroundInfo(
         rows: List<net.pipebomb.android.data.download.DownloadEntity>,

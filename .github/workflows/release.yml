@@ -1,0 +1,66 @@
+name: Signed Android Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Build signed release
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/pipe-bomb-release.jks
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_FILE"
+          version_name="${GITHUB_REF_NAME#v}"
+          version_code=$((GITHUB_RUN_NUMBER + 1000))
+          ./gradlew --no-daemon \
+            lintDebug verifyRoborazziDebug koverHtmlReportDebug assembleRelease \
+            -PversionCode="$version_code" \
+            -PversionName="$version_name"
+          apk="app/build/outputs/apk/release/app-release.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" > /dev/null
+          cp "$apk" "pipe-bomb-${GITHUB_REF_NAME}.apk"
+          sha256sum "pipe-bomb-${GITHUB_REF_NAME}.apk" > "pipe-bomb-${GITHUB_REF_NAME}.apk.sha256"
+          rm -f "$ANDROID_KEYSTORE_FILE"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            "pipe-bomb-${GITHUB_REF_NAME}.apk" \
+            "pipe-bomb-${GITHUB_REF_NAME}.apk.sha256" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag

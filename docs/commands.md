@@ -21,6 +21,9 @@ Read when: building, testing, installing, or setting up the Android project.
 | Lint | `./gradlew lintDebug` |
 | Full gate | `./gradlew lintDebug verifyRoborazziDebug koverHtmlReportDebug assembleDebug` |
 | Install debug | `./gradlew installDebug` |
+| Signed release APK | `./gradlew assembleRelease` (see `releasing.md`) |
+| Verify release signature | `$ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk` |
+| Publish signed release | Push a `v*` tag; `.github/workflows/release.yml` builds it |
 | Clean | `./gradlew clean` |
 
 The debug APK is at `app/build/outputs/apk/debug/app-debug.apk`.
@@ -43,5 +46,6 @@ adb devices
 
 ## CI
 
-`.github/workflows/ci.yml` runs `lintDebug`, `testDebugUnitTest`, and `assembleDebug`
-on push/PR. Use the same command locally before pushing.
+`.github/workflows/ci.yml` runs the debug quality gate on push/PR. A `v*` tag triggers
+`.github/workflows/release.yml`, which builds a signed release. Never commit signing
+material; see `releasing.md`.

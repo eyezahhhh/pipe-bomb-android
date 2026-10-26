@@ -40,7 +40,8 @@ reserved for real media/session behaviour and should run nightly or on a label.
 | Media cache keys | `app/src/test/.../playback/TrackCacheKeyFactoryTest.kt` | stable progressive keys, session-free HLS paths |
 | Synthetic media items | `app/src/test/.../playback/TrackMediaUriTest.kt` and `TrackMediaItemFactoryTest.kt` | URI round-trips, metadata IDs, cache-key/MIME rewriting |
 | Offline auth | `app/src/test/.../data/AuthRepositoryTest.kt` | cached user survives network failure |
-| Download metadata | `app/src/test/.../data/download/DownloadRepositoryTest.kt` | enqueue, completion, collections, reference counts, blocked removal |
+| Download metadata | `app/src/test/.../data/download/DownloadRepositoryTest.kt` | enqueue, completion, collections, reference counts, blocked removal, incomplete states, failed retry |
+| Collection subscription queue | `app/src/test/.../feature/downloads/CollectionSubscriptionQueueTest.kt` | two playlists serialize without drops; duplicate taps reject |
 | Download pins | `app/src/test/.../playback/download/DownloadPinRegistryTest.kt` | track-prefix pinning and unpinning |
 | Download reserve | `app/src/test/.../playback/download/DownloadSpaceTest.kt` | capacity floor and reserve boundary |
 | Playlist windowing | `app/src/test/.../feature/playlist/PlaylistViewModelTest.kt` | first page, lazy chunk, metadata preservation |
@@ -74,7 +75,8 @@ reserved for real media/session behaviour and should run nightly or on a label.
 - Pure queue reducer tests (shuffle/restore, repeat, remove-current).
 - Session-expiry and retry-path tests.
 - Instrumented progressive download, airplane-mode restart, reserve pause/resume,
-  mobile-data pause/resume, removable-storage switch, collection sync, and offline
-  collection detail.
+  mobile-data pause/resume, removable-storage switch, collection sync, offline
+  collection detail, and two overlapping playlist downloads.
+- Signed-release install over a previous signed release with the same key.
 - HLS download rejection integration coverage.
 - Tablet/foldable screenshot variants and Macrobenchmark performance baselines.

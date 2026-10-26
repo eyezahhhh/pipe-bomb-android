@@ -29,6 +29,13 @@ import net.pipebomb.android.playback.PlaybackCache
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private data class DownloadNetworkState(
+    val allowMobileData: Boolean,
+    val isOnline: Boolean,
+    val isMetered: Boolean,
+    val storageRevision: Long,
+)
+
 @Singleton
 @OptIn(UnstableApi::class)
 class DownloadCoordinator @Inject constructor(
@@ -115,21 +122,26 @@ class DownloadCoordinator @Inject constructor(
             scope.launch {
                 combine(
                     settings.allowMobileDataDownloads,
+                    connectivity.isOnline,
                     connectivity.isMetered,
                     storage.revision,
-                ) { allowMobileData, metered, _ ->
-                    !allowMobileData && metered
+                ) { allowMobileData, isOnline, isMetered, storageRevision ->
+                    DownloadNetworkState(
+                        allowMobileData = allowMobileData,
+                        isOnline = isOnline,
+                        isMetered = isMetered,
+                        storageRevision = storageRevision,
+                    )
                 }
                     .distinctUntilChanged()
-                    .collect { refreshAvailability() }
+                    .collect {
+                        refreshAvailability()
+                        ensureDownloadsScheduled()
+                    }
             }
             refreshAvailability()
-            if (storage.resolve().downloadsEnabled &&
-                !cache.storageState.isFallback &&
-                rows.any { it.state == DownloadState.Queued.name || it.state == DownloadState.Pending.name }
-            ) {
-                scheduler.schedule()
-            }
+            ensureDownloadsScheduled()
+            scheduler.scheduleWatchdog()
         }
     }
 
@@ -180,9 +192,19 @@ class DownloadCoordinator @Inject constructor(
         pauseAll()
     }
 
-    suspend fun resume() = refreshAvailability()
+    suspend fun resume() {
+        refreshAvailability()
+        ensureDownloadsScheduled()
+    }
+
+    suspend fun ensureDownloadsScheduled() {
+        if (repository.hasIncompleteDownloads()) {
+            scheduler.ensureScheduled()
+        }
+    }
 
     suspend fun refreshAvailability() {
+        val offline = !connectivity.isOnline.value
         val mobileBlocked = !settings.allowMobileDataDownloads.first() &&
             connectivity.isMetered.value
         _mobileDataPaused.value = mobileBlocked
@@ -194,7 +216,7 @@ class DownloadCoordinator @Inject constructor(
             !DownloadSpace.canStartDownload(storage.selectedAvailableBytes(), reserve)
         _reservePaused.value = reserveBlocked
 
-        if (mobileBlocked || storageUnavailable || reserveBlocked) {
+        if (offline || mobileBlocked || storageUnavailable || reserveBlocked) {
             pauseAll()
         } else {
             withContext(Dispatchers.Main) {

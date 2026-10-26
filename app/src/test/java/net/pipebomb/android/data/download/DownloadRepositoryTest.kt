@@ -9,6 +9,7 @@ import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.playback.ResolvedMedia
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -171,6 +172,50 @@ class DownloadRepositoryTest {
     }
 
     @Test
+    fun incompleteDownloadsCoverActiveAndPausedButNotFailedOrUnsupported() = runBlocking {
+        val active = track("active")
+        val paused = track("paused")
+        val failed = track("failed")
+        val unsupported = track("unsupported")
+        listOf(active, paused, failed, unsupported).forEach { repository.enqueue(it, media(it)) }
+
+        repository.updateProgress(active.key.toString(), 1, 10, DownloadState.Queued)
+        repository.updateProgress(paused.key.toString(), 1, 10, DownloadState.Paused)
+        repository.updateProgress(failed.key.toString(), 1, 10, DownloadState.Failed)
+        repository.markUnsupported(unsupported.key.toString(), "HLS")
+
+        assertTrue(repository.hasIncompleteDownloads())
+        repository.updateProgress(active.key.toString(), 1, 10, DownloadState.Completed)
+        repository.updateProgress(paused.key.toString(), 1, 10, DownloadState.Completed)
+        assertFalse(repository.hasIncompleteDownloads())
+    }
+
+    @Test
+    fun periodicRetryRequeuesManualAndCollectionDownloads() = runBlocking {
+        val manual = track("manual")
+        val member = track("member")
+        val unsupported = track("unsupported")
+        listOf(manual, member, unsupported).forEach { repository.enqueue(it, media(it)) }
+        repository.subscribeCollection(
+            draft = playlistDraft("one"),
+            tracks = listOf(member),
+            accountUuid = "user",
+            accountName = "listener",
+        )
+        repository.markFailed(manual.key.toString(), "network")
+        repository.markFailed(member.key.toString(), "network")
+        repository.markUnsupported(unsupported.key.toString(), "HLS")
+
+        assertEquals(2, repository.retryFailedDownloads("user"))
+
+        assertEquals(DownloadState.Pending.name, repository.get(manual.key)?.state)
+        assertEquals(DownloadState.Pending.name, repository.get(member.key)?.state)
+        assertEquals(DownloadState.Unsupported.name, repository.get(unsupported.key)?.state)
+        assertEquals("", repository.get(manual.key)?.sessionId)
+        assertEquals(0L, repository.get(manual.key)?.bytesDownloaded)
+    }
+
+    @Test
     fun retryKeepsDisplayMetadataAndResetsProgress() = runBlocking {
         val track = Track(
             trackId = "track",
@@ -215,6 +260,14 @@ class DownloadRepositoryTest {
         pluginId = "plugin",
         libraryId = "library",
         title = "Track $id",
+    )
+
+    private fun media(track: Track) = ResolvedMedia(
+        trackKey = track.key,
+        url = "https://example.test/stream",
+        type = ResolvedMedia.MediaType.Stream,
+        resolvedAt = 1L,
+        sessionId = "session",
     )
 
     private fun playlistDraft(id: String) = DownloadCollectionDraft(

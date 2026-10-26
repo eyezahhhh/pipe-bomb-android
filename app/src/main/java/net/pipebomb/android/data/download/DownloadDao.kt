@@ -67,6 +67,15 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads WHERE state = 'Pending' ORDER BY requestedAt ASC")
     suspend fun getPending(): List<DownloadEntity>
 
+    @Query("SELECT * FROM downloads WHERE state = 'Failed' ORDER BY requestedAt ASC")
+    suspend fun getFailed(): List<DownloadEntity>
+
+    @Query(
+        "SELECT COUNT(*) FROM downloads " +
+            "WHERE state IN ('Pending', 'Queued', 'Downloading', 'Paused')",
+    )
+    suspend fun incompleteCount(): Int
+
     @Upsert
     suspend fun upsert(entity: DownloadEntity)
 
