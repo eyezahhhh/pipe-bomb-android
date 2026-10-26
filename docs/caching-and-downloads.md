@@ -124,6 +124,9 @@ progressive-only source resolver.
   when mobile-data downloads are allowed.
 - If the device moves to mobile data while downloads are disallowed, pause Media3
   downloads until Wi-Fi returns or the setting is enabled.
+- Some Android builds deny starting a foreground service from a background worker. The
+  download worker continues without foreground in that case; WorkManager and the
+  15-minute watchdog resume it if the OS stops it.
 - Reconcile Room against Media3 `DownloadIndex` on startup so interrupted work cannot
   leave stale rows.
 - Re-enqueue downloads whenever `Pending`, `Queued`, `Downloading`, or `Paused` rows

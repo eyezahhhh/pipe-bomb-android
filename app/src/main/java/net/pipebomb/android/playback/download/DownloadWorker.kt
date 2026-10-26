@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
@@ -18,6 +19,7 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import net.pipebomb.android.MainActivity
@@ -45,6 +47,8 @@ class DownloadWorker @AssistedInject constructor(
     private val resolver: PlaybackResolver,
     private val connectivity: ConnectivityStatus,
 ) : CoroutineWorker(context, params) {
+    private var foregroundUnavailable = false
+
     override suspend fun doWork(): Result {
         ensureChannel()
         coordinator.awaitReady()
@@ -133,7 +137,20 @@ class DownloadWorker @AssistedInject constructor(
                 coordinator.pauseForReserve()
                 return Result.success()
             }
-            setForeground(foregroundInfo(rows))
+            if (!foregroundUnavailable) {
+                try {
+                    setForeground(foregroundInfo(rows))
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    foregroundUnavailable = true
+                    Log.w(
+                        TAG,
+                        "Download foreground service unavailable; continuing in background",
+                        error,
+                    )
+                }
+            }
             if (active.isEmpty() && hiddenPending == 0 && coordinator.isIdle()) {
                 return Result.success()
             }
@@ -212,6 +229,7 @@ class DownloadWorker @AssistedInject constructor(
     }
 
     private companion object {
+        const val TAG = "DownloadWorker"
         const val CHANNEL_ID = "downloads"
         const val MAX_PREPARED = 6
         const val NOTIFICATION_ID = 2001
