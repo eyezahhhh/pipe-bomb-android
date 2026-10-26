@@ -40,6 +40,7 @@ reserved for real media/session behaviour and should run nightly or on a label.
 | Queue metadata fallback | `app/src/test/.../data/TrackMetadataRepositoryTest.kt` | local download metadata and offline resolution without network |
 | Media cache keys | `app/src/test/.../playback/TrackCacheKeyFactoryTest.kt` | stable progressive keys, session-free HLS paths |
 | Synthetic media items | `app/src/test/.../playback/TrackMediaUriTest.kt` and `TrackMediaItemFactoryTest.kt` | URI round-trips, metadata IDs, cache-key/MIME rewriting |
+| Lazy source failure | `app/src/androidTest/.../playback/LazyTrackMediaSourceTest.kt` | failed resolution reaches ExoPlayer as an error without crashing |
 | Offline auth | `app/src/test/.../data/AuthRepositoryTest.kt` | cached user survives network failure |
 | Download metadata | `app/src/test/.../data/download/DownloadRepositoryTest.kt` | enqueue, completion, collections, reference counts, blocked removal, incomplete states, failed retry |
 | Collection subscription queue | `app/src/test/.../feature/downloads/CollectionSubscriptionQueueTest.kt` | two playlists serialize without drops; duplicate taps reject |

@@ -134,6 +134,7 @@ duration or 240 seconds, whichever is lower. Payload:
 | Failure | Behaviour |
 | ------- | --------- |
 | Session resolve 404 | Refresh session, retry once, then show "Unable to play" |
+| Session resolve failure | Publish a failing media period; ExoPlayer reports the error without crashing |
 | Media URL 404/410 | Invalidate session, re-resolve, seek to last position |
 | Buffer stall over 20s | Invalidate session, retry once at the last position, then pause |
 | Network loss | Keep queue; the stall/error path retries once, then pauses with an error |
