@@ -13,54 +13,86 @@ class PinnedStreamCacheEvictor(
     private val pins: DownloadPinRegistry,
     private val maxUnpinnedBytes: Long,
 ) : CacheEvictor {
+    private val lock = Any()
     private val spans = TreeSet<CacheSpan>(::compare)
     private var unpinnedBytes = 0L
     private var evictionEnabled = false
-    private var cache: Cache? = null
+    @Volatile private var cache: Cache? = null
 
     override fun requiresCacheSpanTouches(): Boolean = true
 
     override fun onCacheInitialized() = Unit
 
     fun attach(cache: Cache) {
-        this.cache = cache
+        synchronized(lock) { this.cache = cache }
     }
 
     fun enableEviction() {
-        evictionEnabled = true
+        synchronized(lock) { evictionEnabled = true }
         refreshPins()
     }
 
     fun refreshPins() {
-        unpinnedBytes = spans.filterNot { pins.isPinned(it.key) }.sumOf { it.length }
-        cache?.let { evict(it, 0) }
+        val candidates = synchronized(lock) {
+            unpinnedBytes = spans.filterNot { pins.isPinned(it.key) }.sumOf { it.length }
+            if (!evictionEnabled || unpinnedBytes <= maxUnpinnedBytes) {
+                return
+            }
+            buildList {
+                var remaining = unpinnedBytes
+                for (span in spans) {
+                    if (remaining <= maxUnpinnedBytes) break
+                    if (!pins.isPinned(span.key)) {
+                        add(span)
+                        remaining -= span.length
+                    }
+                }
+            }
+        }
+        val activeCache = cache ?: return
+        candidates.forEach(activeCache::removeSpan)
     }
 
     override fun onStartFile(cache: Cache, key: String, position: Long, length: Long) {
-        this.cache = cache
-        if (!evictionEnabled || pins.isPinned(key) || length == C.LENGTH_UNSET.toLong()) return
-        evict(cache, length)
+        synchronized(lock) {
+            this.cache = cache
+            if (!evictionEnabled || pins.isPinned(key) || length == C.LENGTH_UNSET.toLong()) {
+                return
+            }
+            evictLocked(cache, length)
+        }
     }
 
     override fun onSpanAdded(cache: Cache, span: CacheSpan) {
-        this.cache = cache
-        spans.add(span)
-        if (!pins.isPinned(span.key)) unpinnedBytes += span.length
-        if (evictionEnabled) evict(cache, 0)
+        synchronized(lock) {
+            this.cache = cache
+            spans.add(span)
+            if (!pins.isPinned(span.key)) unpinnedBytes += span.length
+            if (evictionEnabled) evictLocked(cache, 0)
+        }
     }
 
     override fun onSpanRemoved(cache: Cache, span: CacheSpan) {
-        if (spans.remove(span) && !pins.isPinned(span.key)) {
-            unpinnedBytes -= span.length
+        synchronized(lock) {
+            if (spans.remove(span) && !pins.isPinned(span.key)) {
+                unpinnedBytes -= span.length
+            }
         }
     }
 
     override fun onSpanTouched(cache: Cache, oldSpan: CacheSpan, newSpan: CacheSpan) {
-        onSpanRemoved(cache, oldSpan)
-        onSpanAdded(cache, newSpan)
+        synchronized(lock) {
+            if (spans.remove(oldSpan) && !pins.isPinned(oldSpan.key)) {
+                unpinnedBytes -= oldSpan.length
+            }
+            this.cache = cache
+            spans.add(newSpan)
+            if (!pins.isPinned(newSpan.key)) unpinnedBytes += newSpan.length
+            if (evictionEnabled) evictLocked(cache, 0)
+        }
     }
 
-    private fun evict(cache: Cache, requiredSpace: Long) {
+    private fun evictLocked(cache: Cache, requiredSpace: Long) {
         while (evictionEnabled && unpinnedBytes + requiredSpace > maxUnpinnedBytes) {
             val candidate = spans.firstOrNull { !pins.isPinned(it.key) } ?: break
             cache.removeSpan(candidate)

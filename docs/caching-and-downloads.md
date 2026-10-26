@@ -41,7 +41,8 @@ LazyTrackMediaSourceFactory
 
 `PinnedStreamCacheEvictor` enforces the streamed-audio budget against every cache
 span whose key is not protected by a queued, downloading, paused, failed-partial, or
-completed download.
+completed download. Its span state is lock-protected because Media3 cache callbacks run
+on cache threads while pin refreshes come from Room collectors.
 
 ## Cache identity
 

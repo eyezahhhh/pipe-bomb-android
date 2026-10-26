@@ -47,10 +47,10 @@ if (releaseTaskRequested) {
 
 val appVersionCode = providers.gradleProperty("versionCode").orNull
     ?.toIntOrNull()
-    ?: 2
+    ?: 1003
 val appVersionName = providers.gradleProperty("versionName").orNull
     ?.takeIf { it.isNotBlank() }
-    ?: "0.2.0"
+    ?: "0.2.2"
 
 android {
     namespace = "net.pipebomb.android"
