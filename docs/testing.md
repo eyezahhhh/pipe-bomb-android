@@ -37,6 +37,7 @@ reserved for real media/session behaviour and should run nightly or on a label.
 | Attributes | `app/src/test/.../core/attributes/AttributeReaderTest.kt` | formatted/raw, types, buffers, unknown |
 | Track identity | `app/src/test/.../core/model/TrackKeyTest.kt` | round-trip and malformed keys |
 | Track cache | `app/src/test/.../data/TrackCacheTest.kt` | TTL and clearing |
+| Queue metadata fallback | `app/src/test/.../data/TrackMetadataRepositoryTest.kt` | local download metadata and offline resolution without network |
 | Media cache keys | `app/src/test/.../playback/TrackCacheKeyFactoryTest.kt` | stable progressive keys, session-free HLS paths |
 | Synthetic media items | `app/src/test/.../playback/TrackMediaUriTest.kt` and `TrackMediaItemFactoryTest.kt` | URI round-trips, metadata IDs, cache-key/MIME rewriting |
 | Offline auth | `app/src/test/.../data/AuthRepositoryTest.kt` | cached user survives network failure |

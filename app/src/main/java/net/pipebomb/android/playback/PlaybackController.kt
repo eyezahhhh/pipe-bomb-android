@@ -35,10 +35,7 @@ import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.model.TrackIdDto
 import net.pipebomb.android.core.datastore.PlaybackQueueStore
 import net.pipebomb.android.core.datastore.PlaybackSnapshot
-import net.pipebomb.android.core.net.ApiResult
-import net.pipebomb.android.data.CatalogRepository
-import net.pipebomb.android.data.download.DownloadRepository
-import net.pipebomb.android.data.download.toTrack
+import net.pipebomb.android.data.TrackMetadataRepository
 import net.pipebomb.android.di.ApplicationScope
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -66,8 +63,7 @@ class PlaybackController @Inject constructor(
     @param:ApplicationScope private val scope: CoroutineScope,
     private val resolver: PlaybackResolver,
     private val cache: PlaybackCache,
-    private val catalogRepository: CatalogRepository,
-    private val downloadRepository: DownloadRepository,
+    private val metadata: TrackMetadataRepository,
     private val queueStore: PlaybackQueueStore,
 ) {
     private val _state = MutableStateFlow(PlaybackUiState())
@@ -509,12 +505,7 @@ class PlaybackController @Inject constructor(
         }
     }
 
-    private suspend fun resolveTrack(key: TrackKey): Track? {
-        val fetched = (catalogRepository.tracks(listOf(key)) as? ApiResult.Success)
-            ?.value
-            ?.firstOrNull()
-        return fetched ?: downloadRepository.completed(key)?.toTrack()
-    }
+    private suspend fun resolveTrack(key: TrackKey): Track? = metadata.resolve(key)
 
     private fun advanceOnEnd() {
         val state = _state.value

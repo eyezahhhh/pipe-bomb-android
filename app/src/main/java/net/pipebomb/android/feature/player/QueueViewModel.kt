@@ -10,16 +10,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.pipebomb.android.core.model.Track
-import net.pipebomb.android.core.net.ApiResult
-import net.pipebomb.android.data.CatalogRepository
+import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.data.TrackMetadataRepository
 import net.pipebomb.android.playback.PlaybackController
 import net.pipebomb.android.playback.RepeatMode
 import javax.inject.Inject
 
 data class QueueUiState(
-    val queue: List<net.pipebomb.android.core.model.TrackKey> = emptyList(),
+    val queue: List<TrackKey> = emptyList(),
     val currentIndex: Int = 0,
     val isPlaying: Boolean = false,
     val shuffle: Boolean = false,
@@ -29,7 +30,7 @@ data class QueueUiState(
 @HiltViewModel
 class QueueViewModel @Inject constructor(
     private val controller: PlaybackController,
-    private val catalogRepository: CatalogRepository,
+    private val metadata: TrackMetadataRepository,
 ) : ViewModel() {
     val state: StateFlow<QueueUiState> = controller.state
         .map {
@@ -56,8 +57,8 @@ class QueueViewModel @Inject constructor(
             },
         )
 
-    private val _tracks = MutableStateFlow<List<Track>>(emptyList())
-    val tracks: StateFlow<List<Track>> = _tracks.asStateFlow()
+    private val _tracks = MutableStateFlow<Map<TrackKey, Track>>(emptyMap())
+    val tracks: StateFlow<Map<TrackKey, Track>> = _tracks.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -66,10 +67,10 @@ class QueueViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { keys ->
                     if (keys.isEmpty()) {
-                        _tracks.value = emptyList()
+                        _tracks.value = emptyMap()
                     } else {
-                        val result = catalogRepository.tracks(keys)
-                        _tracks.value = (result as? ApiResult.Success)?.value.orEmpty()
+                        _tracks.value = metadata.local(keys)
+                        _tracks.update { current -> current + metadata.refresh(keys) }
                     }
                 }
         }

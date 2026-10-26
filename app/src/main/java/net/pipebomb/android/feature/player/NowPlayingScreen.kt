@@ -71,6 +71,7 @@ fun NowPlayingSheet(
     onRepeat: () -> Unit,
     onOpenQueue: () -> Unit,
     onDismiss: () -> Unit,
+    isOnline: Boolean = true,
     isSaved: Boolean = false,
     onToggleSave: () -> Unit = {},
     downloadItem: DownloadItem? = null,
@@ -123,6 +124,7 @@ fun NowPlayingSheet(
             onRepeat = onRepeat,
             onClose = { dismissThen(onDismiss) },
             onOpenQueue = { dismissThen(onOpenQueue) },
+            isOnline = isOnline,
             isSaved = isSaved,
             onToggleSave = onToggleSave,
             downloadItem = downloadItem,
@@ -153,6 +155,7 @@ private fun NowPlayingContent(
     onRepeat: () -> Unit,
     onClose: () -> Unit,
     onOpenQueue: () -> Unit,
+    isOnline: Boolean,
     isSaved: Boolean,
     onToggleSave: () -> Unit,
     downloadItem: DownloadItem?,
@@ -272,6 +275,7 @@ private fun NowPlayingContent(
                 ?: track?.takeIf { page == currentIndex }
             PlayerPage(
                 track = pageTrack,
+                isOnline = isOnline,
                 onOpenArtist = onOpenArtist,
             )
         }
@@ -367,6 +371,7 @@ private fun NowPlayingContent(
 @Composable
 private fun PlayerPage(
     track: Track?,
+    isOnline: Boolean,
     onOpenArtist: (String) -> Unit,
 ) {
     val colors = PipeBombTheme.colors
@@ -388,7 +393,8 @@ private fun PlayerPage(
             modifier = Modifier.padding(top = PipeBombTheme.spacing.xl),
         ) {
             Text(
-                text = track?.let { DisplayText.title(it) } ?: "Loading…",
+                text = track?.let { DisplayText.title(it) }
+                    ?: if (isOnline) "Loading…" else "Unavailable offline",
                 style = PipeBombTheme.typography.sectionHeading,
                 color = if (track == null) colors.fgTertiary else colors.fgPrimary,
                 maxLines = 2,

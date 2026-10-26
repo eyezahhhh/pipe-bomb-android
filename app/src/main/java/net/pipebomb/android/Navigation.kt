@@ -371,7 +371,7 @@ fun MainNavigation() {
                     )
                 }
                 entry<Settings> { SettingsScreen() }
-                entry<Queue> { QueueScreen() }
+                entry<Queue> { QueueScreen(isOnline = isOnline) }
                 entry<AlbumRoute> { route ->
                     AlbumScreen(
                         albumId = route.albumId,
@@ -564,6 +564,7 @@ private fun PlayerOverlay(
         onRepeat = playbackHost::cycleRepeat,
         onOpenQueue = onOpenQueue,
         onDismiss = onDismiss,
+        isOnline = isOnline,
         isSaved = isSaved,
         onToggleSave = playbackHost::toggleSaved,
         downloadItem = downloadItem,

@@ -17,6 +17,7 @@ import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.data.CatalogRepository
+import net.pipebomb.android.data.TrackMetadataRepository
 import net.pipebomb.android.playback.PlaybackController
 import net.pipebomb.android.playback.PlaybackUiState
 import java.util.concurrent.ConcurrentHashMap
@@ -37,6 +38,7 @@ data class PlaybackQueueState(
 class PlaybackHostViewModel @Inject constructor(
     private val controller: PlaybackController,
     private val catalogRepository: CatalogRepository,
+    private val metadata: TrackMetadataRepository,
 ) : ViewModel() {
     val state: StateFlow<PlaybackUiState> = controller.state
     val currentTrack: StateFlow<Track?> = controller.currentTrack
@@ -89,6 +91,7 @@ class PlaybackHostViewModel @Inject constructor(
                 .map { it.queue to it.currentIndex }
                 .distinctUntilChanged()
                 .collect { (queue, index) ->
+                    hydrateQueueTracks(queue)
                     ensureQueueTracks((index - 2)..(index + 2))
                 }
         }
@@ -142,19 +145,31 @@ class PlaybackHostViewModel @Inject constructor(
         if (keys.isEmpty()) return
         viewModelScope.launch {
             try {
-                when (val result = catalogRepository.tracks(keys)) {
-                    is ApiResult.Success -> {
-                        _queueTracks.update { current ->
-                            current + result.value.associateBy { it.key }
-                        }
-                    }
-
-                    is ApiResult.Failure -> Unit
-                }
+                mergeQueueTracks(metadata.local(keys))
+                mergeQueueTracks(metadata.refresh(keys))
             } finally {
                 keys.forEach(tracksInFlight::remove)
             }
         }
+    }
+
+    private fun hydrateQueueTracks(queue: List<TrackKey>) {
+        if (queue.isEmpty()) {
+            _queueTracks.value = emptyMap()
+            return
+        }
+        viewModelScope.launch {
+            val local = metadata.local(queue)
+            val keys = queue.toHashSet()
+            _queueTracks.update { current ->
+                (current + local).filterKeys { it in keys }
+            }
+        }
+    }
+
+    private fun mergeQueueTracks(tracks: Map<TrackKey, Track>) {
+        if (tracks.isEmpty()) return
+        _queueTracks.update { current -> current + tracks }
     }
 
     private fun applySaved(track: Track, saved: Boolean) {

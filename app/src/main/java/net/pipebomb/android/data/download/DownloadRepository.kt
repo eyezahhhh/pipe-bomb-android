@@ -49,6 +49,13 @@ class DownloadRepository @Inject constructor(
 
     suspend fun all(): List<DownloadEntity> = dao.getAll()
 
+    suspend fun localMetadata(keys: Collection<TrackKey>): Map<TrackKey, Track> {
+        val unique = keys.distinct()
+        if (unique.isEmpty()) return emptyMap()
+        return dao.getMany(unique.map { it.toString() })
+            .associate { it.key to it.toTrack() }
+    }
+
     suspend fun pending(): List<DownloadEntity> = dao.getPending()
 
     suspend fun hasIncompleteDownloads(): Boolean = dao.incompleteCount() > 0

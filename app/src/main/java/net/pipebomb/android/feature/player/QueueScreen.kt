@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
-import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -42,6 +41,7 @@ import net.pipebomb.android.ui.components.ResourceImage
 @Composable
 fun QueueScreen(
     modifier: Modifier = Modifier,
+    isOnline: Boolean = true,
     viewModel: QueueViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -99,12 +99,12 @@ fun QueueScreen(
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
                 itemsIndexed(state.queue, key = { index, key -> "$index:$key" }) { index, key ->
-                    val track = tracks.getOrNull(index)
                     QueueRow(
-                        track = track,
+                        track = tracks[key],
                         position = index + 1,
                         isCurrent = index == state.currentIndex,
                         isPlaying = index == state.currentIndex && state.isPlaying,
+                        isOnline = isOnline,
                         onClick = { viewModel.playIndex(index) },
                         onRemove = { viewModel.remove(index) },
                     )
@@ -141,6 +141,7 @@ private fun QueueRow(
     position: Int,
     isCurrent: Boolean,
     isPlaying: Boolean,
+    isOnline: Boolean,
     onClick: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -168,7 +169,8 @@ private fun QueueRow(
         )
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = track?.let { DisplayText.title(it) } ?: "Loading…",
+                text = track?.let { DisplayText.title(it) }
+                    ?: if (isOnline) "Loading…" else "Unavailable offline",
                 style = PipeBombTheme.typography.trackTitle,
                 color = if (isCurrent) colors.accentPrimary else colors.fgPrimary,
                 maxLines = 1,
