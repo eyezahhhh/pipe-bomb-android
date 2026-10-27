@@ -458,6 +458,10 @@ class PlaybackController @Inject constructor(
         }
     }
 
+    fun updateCurrentTrackSaved(saved: Boolean) {
+        _currentTrack.value = _currentTrack.value?.copy(bookmarked = saved)
+    }
+
     fun clearQueue() {
         externalQueueMode = false
         externalTracks = emptyMap()

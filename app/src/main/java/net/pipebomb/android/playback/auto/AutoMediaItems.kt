@@ -45,6 +45,14 @@ object AutoMediaItems {
             .setMediaMetadata(trackMetadata(track, artwork))
             .build()
 
+    fun collectionAction(context: AutoContext, shuffle: Boolean): MediaItem = category(
+        mediaId = AutoIds.action(context, shuffle),
+        title = if (shuffle) "Shuffle" else "Play",
+        subtitle = if (shuffle) "Shuffle all" else "Play all",
+        browsable = false,
+        playable = true,
+    )
+
     fun album(album: Album, artwork: ByteArray? = null): MediaItem =
         category(
             mediaId = AutoIds.album(album.uuid ?: album.identityKey ?: "unknown"),
@@ -52,7 +60,7 @@ object AutoMediaItems {
             subtitle = DisplayText.artists(album),
             artwork = artwork,
             browsable = true,
-            playable = true,
+            playable = false,
         )
 
     fun artist(artist: Artist, artwork: ByteArray? = null): MediaItem =
@@ -61,7 +69,7 @@ object AutoMediaItems {
             title = DisplayText.title(artist),
             artwork = artwork,
             browsable = true,
-            playable = true,
+            playable = false,
         )
 
     fun playlist(playlist: Playlist, artwork: ByteArray? = null): MediaItem =
@@ -71,7 +79,7 @@ object AutoMediaItems {
             subtitle = DisplayText.ownerName(playlist),
             artwork = artwork,
             browsable = true,
-            playable = true,
+            playable = false,
         )
 
     fun savedGroup(type: AutoNode.SavedType): MediaItem = category(
@@ -86,7 +94,7 @@ object AutoMediaItems {
             AutoNode.SavedType.Artists -> "Saved artists"
         },
         browsable = true,
-        playable = type == AutoNode.SavedType.Tracks,
+        playable = false,
     )
 
     private fun trackMetadata(track: Track, artwork: ByteArray?): MediaMetadata {

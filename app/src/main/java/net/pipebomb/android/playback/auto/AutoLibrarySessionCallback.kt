@@ -11,6 +11,8 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionError
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -21,6 +23,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import net.pipebomb.android.di.ApplicationScope
 import net.pipebomb.android.playback.PlaybackController
+import net.pipebomb.android.playback.PlaybackSessionActions
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,8 +33,42 @@ class AutoLibrarySessionCallback @Inject constructor(
     private val dataSource: AutoLibraryDataSource,
     private val queueResolver: AutoQueueResolver,
     private val playbackController: PlaybackController,
+    private val actions: PlaybackSessionActions,
     @ApplicationScope private val scope: CoroutineScope,
 ) : MediaLibraryService.MediaLibrarySession.Callback {
+
+    override fun onConnect(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+    ): MediaSession.ConnectionResult {
+        val defaults = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller).build()
+        val commands = defaults.availableSessionCommands.buildUpon().apply {
+            add(SessionCommand(PlaybackSessionActions.COMMAND_SAVE, Bundle.EMPTY))
+            add(SessionCommand(PlaybackSessionActions.COMMAND_SHUFFLE, Bundle.EMPTY))
+            add(SessionCommand(PlaybackSessionActions.COMMAND_REPEAT, Bundle.EMPTY))
+        }.build()
+        return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+            .setAvailableSessionCommands(commands)
+            .setAvailablePlayerCommands(defaults.availablePlayerCommands)
+            .build()
+    }
+
+    override fun onCustomCommand(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        customCommand: SessionCommand,
+        args: Bundle,
+    ): ListenableFuture<SessionResult> {
+        when (customCommand.customAction) {
+            PlaybackSessionActions.COMMAND_SAVE -> actions.toggleSaved()
+            PlaybackSessionActions.COMMAND_SHUFFLE -> actions.toggleShuffle()
+            PlaybackSessionActions.COMMAND_REPEAT -> actions.cycleRepeat()
+            else -> return Futures.immediateFuture(
+                SessionResult(SessionError.ERROR_NOT_SUPPORTED),
+            )
+        }
+        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+    }
 
     override fun onGetLibraryRoot(
         session: MediaLibraryService.MediaLibrarySession,
@@ -193,7 +230,7 @@ class AutoLibrarySessionCallback @Inject constructor(
             val item = track?.let {
                 AutoMediaItems.trackBrowse(it, AutoContext.History)
             } ?: MediaItem.Builder()
-                .setMediaId(AutoIds.HISTORY)
+                .setMediaId(AutoIds.RECENT)
                 .setMediaMetadata(MediaMetadata.Builder().setTitle("Pipe Bomb").build())
                 .build()
             return Futures.immediateFuture(

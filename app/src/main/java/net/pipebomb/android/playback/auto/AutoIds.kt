@@ -8,17 +8,18 @@ sealed interface AutoNode {
     data object Recent : AutoNode
     data object Playlists : AutoNode
     data object Saved : AutoNode
-    data object History : AutoNode
     data class Playlist(val uuid: String) : AutoNode
     data class Album(val uuid: String) : AutoNode
     data class Artist(val uuid: String) : AutoNode
     data class SavedGroup(val type: SavedType) : AutoNode
     data class Track(val context: AutoContext, val key: TrackKey) : AutoNode
+    data class Action(val context: AutoContext, val shuffle: Boolean) : AutoNode
 
     enum class SavedType { Tracks, Albums, Artists }
 }
 
 sealed interface AutoContext {
+    data class Recent(val snapshotId: String) : AutoContext
     data class Album(val uuid: String) : AutoContext
     data class Playlist(val uuid: String) : AutoContext
     data class Artist(val uuid: String) : AutoContext
@@ -32,7 +33,6 @@ object AutoIds {
     const val RECENT = "pb:recent"
     const val PLAYLISTS = "pb:playlists"
     const val SAVED = "pb:saved"
-    const val HISTORY = "pb:history"
 
     fun playlist(uuid: String) = "pb:playlist:$uuid"
     fun album(uuid: String) = "pb:album:$uuid"
@@ -41,24 +41,17 @@ object AutoIds {
     fun savedAlbums() = "pb:saved:albums"
     fun savedArtists() = "pb:saved:artists"
 
-    fun track(context: AutoContext, key: TrackKey): String {
-        val contextToken = when (context) {
-            is AutoContext.Album -> "album:${context.uuid}"
-            is AutoContext.Playlist -> "playlist:${context.uuid}"
-            is AutoContext.Artist -> "artist:${context.uuid}"
-            AutoContext.SavedTracks -> "saved:tracks"
-            AutoContext.History -> "history"
-            is AutoContext.Search -> "search:${encode(context.query)}"
-        }
-        return "pb:track:${encode(contextToken)}:${encode(key.toString())}"
-    }
+    fun action(context: AutoContext, shuffle: Boolean): String =
+        "pb:action:${encode(contextToken(context))}:${if (shuffle) "shuffle" else "play"}"
+
+    fun track(context: AutoContext, key: TrackKey): String =
+        "pb:track:${encode(contextToken(context))}:${encode(key.toString())}"
 
     fun parse(id: String): AutoNode? {
         if (id == ROOT) return AutoNode.Root
         if (id == RECENT) return AutoNode.Recent
         if (id == PLAYLISTS) return AutoNode.Playlists
         if (id == SAVED) return AutoNode.Saved
-        if (id == HISTORY) return AutoNode.History
         if (id == savedTracks()) return AutoNode.SavedGroup(AutoNode.SavedType.Tracks)
         if (id == savedAlbums()) return AutoNode.SavedGroup(AutoNode.SavedType.Albums)
         if (id == savedArtists()) return AutoNode.SavedGroup(AutoNode.SavedType.Artists)
@@ -70,6 +63,15 @@ object AutoIds {
                 AutoNode.Album(parts[2])
             parts.size == 3 && parts[0] == "pb" && parts[1] == "artist" ->
                 AutoNode.Artist(parts[2])
+            parts.size == 4 && parts[0] == "pb" && parts[1] == "action" -> {
+                val context = decodeContext(decode(parts[2])) ?: return null
+                val shuffle = when (parts[3]) {
+                    "play" -> false
+                    "shuffle" -> true
+                    else -> return null
+                }
+                AutoNode.Action(context, shuffle)
+            }
             parts.size == 4 && parts[0] == "pb" && parts[1] == "track" -> {
                 val context = decodeContext(decode(parts[2])) ?: return null
                 val key = TrackKey.parse(decode(parts[3])) ?: return null
@@ -83,9 +85,8 @@ object AutoIds {
         is AutoNode.Album -> AutoContext.Album(node.uuid)
         is AutoNode.Playlist -> AutoContext.Playlist(node.uuid)
         is AutoNode.Artist -> AutoContext.Artist(node.uuid)
-        AutoNode.Recent -> AutoContext.History
-        AutoNode.History -> AutoContext.History
         is AutoNode.Track -> node.context
+        is AutoNode.Action -> node.context
         is AutoNode.SavedGroup -> when (node.type) {
             AutoNode.SavedType.Tracks -> AutoContext.SavedTracks
             else -> null
@@ -93,7 +94,18 @@ object AutoIds {
         else -> null
     }
 
+    internal fun contextToken(context: AutoContext): String = when (context) {
+        is AutoContext.Recent -> "recent:${context.snapshotId}"
+        is AutoContext.Album -> "album:${context.uuid}"
+        is AutoContext.Playlist -> "playlist:${context.uuid}"
+        is AutoContext.Artist -> "artist:${context.uuid}"
+        AutoContext.SavedTracks -> "saved:tracks"
+        AutoContext.History -> "history"
+        is AutoContext.Search -> "search:${encode(context.query)}"
+    }
+
     private fun decodeContext(token: String): AutoContext? = when {
+        token.startsWith("recent:") -> AutoContext.Recent(token.removePrefix("recent:"))
         token == "saved:tracks" -> AutoContext.SavedTracks
         token == "history" -> AutoContext.History
         token.startsWith("album:") -> AutoContext.Album(token.removePrefix("album:"))

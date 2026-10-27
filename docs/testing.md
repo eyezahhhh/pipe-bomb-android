@@ -49,9 +49,11 @@ reserved for real media/session behaviour and should run nightly or on a label.
 | Download reserve | `app/src/test/.../playback/download/DownloadSpaceTest.kt` | capacity floor and reserve boundary |
 | Playlist windowing | `app/src/test/.../feature/playlist/PlaylistViewModelTest.kt` | first page, lazy chunk, metadata preservation |
 | History windowing | `app/src/test/.../feature/library/LibraryViewModelTest.kt` | lazy load, page mapping, no duplicate chunks |
-| Auto media IDs | `app/src/test/.../playback/auto/AutoIdsTest.kt` | context/track ID round-trip, malformed IDs |
+| Auto media IDs | `app/src/test/.../playback/auto/AutoIdsTest.kt` | recent snapshot/track/action ID round-trip, malformed IDs |
 | Auto queue resolution | `app/src/test/.../playback/auto/AutoQueueResolverTest.kt` | full metadata queue, start index, no session requests |
-| Auto browse integration | `app/src/androidTest/.../playback/auto/AutoBrowseTest.kt` | real MediaBrowser root/categories/saved; authenticated full-queue, synthetic URI, and Next test |
+| Auto collection paging | `app/src/test/.../playback/auto/AutoCollectionPagingTest.kt` | action rows, page offsets, page-size limits |
+| Auto recent snapshots | `app/src/test/.../playback/auto/AutoRecentSnapshotStoreTest.kt` | stable tokens and expiry |
+| Auto browse integration | `app/src/androidTest/.../playback/auto/AutoBrowseTest.kt` | root, custom commands, paged actions, full queue, synthetic URI, and Next |
 | Component interaction | `app/src/test/.../ui/interaction/ComponentInteractionTest.kt` | pager selection guards, mini-player swipes/tap/buffering, media action icons/loading, track long-press |
 | Visual goldens | `app/src/test/.../ui/screenshot/ComponentScreenshotTest.kt` | track rows, media actions, mini player, player sheet, design tokens |
 

@@ -32,29 +32,34 @@ Root categories:
 - Recently played
 - Playlists
 - Saved → Tracks / Albums / Artists
-- History
 
 IDs are stable strings in `AutoIds`:
 
-- `pb:root`, `pb:recent`, `pb:playlists`, `pb:saved`, `pb:history`
+- `pb:root`, `pb:recent`, `pb:playlists`, `pb:saved`
 - `pb:playlist:<uuid>`
 - `pb:album:<uuid>`, `pb:artist:<uuid>`
 - `pb:saved:tracks`, `pb:saved:albums`, `pb:saved:artists`
+- `pb:action:<encoded context>:play|shuffle`
 - `pb:track:<encoded context>:<encoded track key>`
 
-The track context is encoded into the selected item because Android Auto sends only
-the selected `MediaItem` to `onSetMediaItems`, not its siblings. Contexts include
-album, playlist, artist, saved tracks, history, and search queries.
+The track/action context is encoded into the selected item because Android Auto sends
+only the selected `MediaItem` to `onSetMediaItems`, not its siblings. Contexts include
+recent snapshot, album, playlist, artist, saved tracks, search, and the internal
+playback-resumption history context.
 
-Browse categories are browsable but generally not playable. Album, playlist, artist,
-saved-track, recent, and history items are playable, so Auto can start a full queue.
+Collection categories are browsable only. Opening a playlist, album, artist, saved
+tracks, or recently played shows Play and Shuffle actions at the top of the track list.
+Selecting a track starts that collection at the selected track.
 
 ## Queue expansion
 
 `AutoQueueResolver` expands a selected context into a playable queue:
 
+- Recently played is cached as a deduplicated snapshot; track IDs carry the snapshot
+  token so a live history update cannot replace the active queue.
 - Fetch the complete ordered context from `AutoLibraryDataSource`.
-- Start at the selected track.
+- For a collection action, start at index 0 and shuffle the snapshot for the Shuffle item.
+- Start at the selected track for normal track selection.
 - Build metadata-only Media3 `MediaItem`s using the stable Auto media ID and
   `pipebomb://track/<base64 TrackKey>` URI.
 - Load artwork only for the selected item; do not make per-track network calls while
@@ -65,6 +70,12 @@ saved-track, recent, and history items are playable, so Auto can start a full qu
 There is no track-count cap and no session creation during queue construction. A
 250-track playlist returns all 250 items with zero audio-session requests. Sessions are
 created only for items ExoPlayer actually prepares.
+
+The browse tree paginates playlists, album/artist tracks, saved lists, and the recent
+snapshot. Page 0 includes the two collection actions, so it returns `pageSize - 2`
+tracks; later pages return the requested number without actions. This keeps every
+`LibraryResult` within Android Auto's page-size contract and prevents duplicate pages
+from resetting scroll position.
 
 ## Phone synchronization
 
@@ -81,6 +92,14 @@ created only for items ExoPlayer actually prepares.
 V1 limitation: queue mutation actions while an Auto queue is active (add next, remove,
 reorder) are not projected back into the ExoPlayer Auto playlist. Treat Auto playback
 as a read-only queue there until a follow-up.
+
+## Playback controls
+
+The media session installs a custom button layout for Save/Saved, Shuffle off/on, and
+Repeat off/all/one. The buttons update from `PlaybackController.state` and
+`PlaybackSessionActions.saved`, and commands are handled by `onCustomCommand`.
+Android Auto may place these custom actions in the transport row or overflow depending
+on available space.
 
 ## Artwork
 
@@ -106,13 +125,14 @@ cookie.
 
 ## Testing
 
-- Unit: `AutoIdsTest` covers ID round-trips and malformed input.
+- Unit: `AutoIdsTest` covers root, track, recent snapshot, and collection action IDs.
 - Unit: `AutoQueueResolverTest` verifies a 250-track metadata-only queue creates zero
   audio sessions.
 - Instrumented: `AutoBrowseTest` connects a real `MediaBrowser` to `PlaybackService`
-  and verifies root, category, and saved children, plus full playlist expansion,
-  synthetic queue URIs, and Next availability when authenticated content exists. The
-  expansion tests are skipped when the test install has no authenticated catalog.
+  and verifies root categories, custom playback commands, saved children, paged
+  collection actions, full playlist expansion, synthetic queue URIs, and Next
+  availability when authenticated content exists. The expansion tests are skipped when
+  the test install has no authenticated catalog.
 - Manual: Desktop Head Unit (DHU) or an Auto head unit for category layout, voice
   search, artwork, next/previous, and phone-state synchronization.
 - Production Auto distribution requires Google approval; DHU is sufficient for

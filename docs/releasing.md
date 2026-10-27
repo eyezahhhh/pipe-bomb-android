@@ -47,7 +47,7 @@ Never print, commit, or upload the keystore outside the release workflow.
 
 ## Versioning
 
-- Debug/local defaults: `versionCode = 1007`, `versionName = 0.2.5`.
+- Debug/local defaults: `versionCode = 1008`, `versionName = 0.2.6`.
 - Signed CI releases use `1000 + GitHub run number` for a monotonic `versionCode` and
   the tag without the leading `v` for `versionName`.
 - Override locally with `-PversionCode=...` and `-PversionName=...`.

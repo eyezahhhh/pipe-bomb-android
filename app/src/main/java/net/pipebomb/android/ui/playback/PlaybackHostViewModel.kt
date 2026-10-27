@@ -15,10 +15,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
-import net.pipebomb.android.core.net.ApiResult
-import net.pipebomb.android.data.CatalogRepository
 import net.pipebomb.android.data.TrackMetadataRepository
 import net.pipebomb.android.playback.PlaybackController
+import net.pipebomb.android.playback.PlaybackSessionActions
 import net.pipebomb.android.playback.PlaybackUiState
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -37,8 +36,8 @@ data class PlaybackQueueState(
 @HiltViewModel
 class PlaybackHostViewModel @Inject constructor(
     private val controller: PlaybackController,
-    private val catalogRepository: CatalogRepository,
     private val metadata: TrackMetadataRepository,
+    private val actions: PlaybackSessionActions,
 ) : ViewModel() {
     val state: StateFlow<PlaybackUiState> = controller.state
     val currentTrack: StateFlow<Track?> = controller.currentTrack
@@ -119,22 +118,14 @@ class PlaybackHostViewModel @Inject constructor(
 
     fun setSaved(track: Track, saved: Boolean) {
         viewModelScope.launch {
-            if (catalogRepository.setTrackSaved(track.key, saved) is ApiResult.Success) {
-                if (controller.currentTrack.value?.key == track.key) {
-                    applySaved(track, saved)
-                }
+            if (actions.setSaved(track, saved)) {
+                applySaved(track, saved)
             }
         }
     }
 
     fun toggleSaved() {
-        val track = controller.currentTrack.value ?: return
-        val target = !_saved.value.saved
-        viewModelScope.launch {
-            if (catalogRepository.setTrackSaved(track.key, target) is ApiResult.Success) {
-                applySaved(track, target)
-            }
-        }
+        actions.toggleSaved()
     }
     fun ensureQueueTracks(indices: Iterable<Int>) {
         val queue = controller.state.value.queue
@@ -173,7 +164,9 @@ class PlaybackHostViewModel @Inject constructor(
     }
 
     private fun applySaved(track: Track, saved: Boolean) {
-        _saved.value = SavedState(trackKey = track.key, saved = saved)
+        if (controller.currentTrack.value?.key == track.key) {
+            _saved.value = SavedState(trackKey = track.key, saved = saved)
+        }
         _queueTracks.update { current ->
             current[track.key]?.let { cached ->
                 current + (track.key to cached.copy(bookmarked = saved))

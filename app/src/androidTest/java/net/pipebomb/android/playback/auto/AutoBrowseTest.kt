@@ -2,10 +2,13 @@ package net.pipebomb.android.playback.auto
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaBrowser
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -15,7 +18,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.runBlocking
 import net.pipebomb.android.playback.PlaybackService
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.fail
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeNotNull
 import org.junit.Assume.assumeTrue
@@ -26,6 +29,47 @@ import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class AutoBrowseTest {
+    @Test
+    fun exposesSaveShuffleAndRepeatCommands() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val browser = MediaBrowser.Builder(context, token).buildAsync().get(15, TimeUnit.SECONDS)
+        try {
+            val deadline = System.currentTimeMillis() + 5_000
+            var actions = emptyList<String>()
+            while (System.currentTimeMillis() < deadline) {
+                val ref = AtomicReference<List<String>>(emptyList())
+                instrumentation.runOnMainSync {
+                    ref.set(browser.customLayout.mapNotNull { it.sessionCommand?.customAction })
+                }
+                actions = ref.get()
+                if (actions.containsAll(EXPECTED_ACTIONS)) break
+                Thread.sleep(50)
+            }
+            assertTrue("Missing custom actions: $actions", actions.containsAll(EXPECTED_ACTIONS))
+            for (command in EXPECTED_ACTIONS) {
+                val resultFuture = AtomicReference<ListenableFuture<SessionResult>>()
+                instrumentation.runOnMainSync {
+                    resultFuture.set(
+                        browser.sendCustomCommand(
+                            SessionCommand(command, Bundle.EMPTY),
+                            Bundle.EMPTY,
+                        ),
+                    )
+                }
+                val result = resultFuture.get().get(5, TimeUnit.SECONDS)
+                assertEquals(
+                    "Command $command was rejected",
+                    SessionResult.RESULT_SUCCESS,
+                    result.resultCode,
+                )
+            }
+        } finally {
+            instrumentation.runOnMainSync { browser.release() }
+        }
+    }
+
     @Test
     fun browsesLibraryRootAndCategories() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -41,7 +85,9 @@ class AutoBrowseTest {
                 rootFuture.set(browser.getLibraryRoot(null))
             }
             val root = rootFuture.get().get(15, TimeUnit.SECONDS)
-            assertNotNull(root.value)
+            if (root.value == null) {
+                fail("root resultCode=${root.resultCode}")
+            }
             assertEquals(AutoIds.ROOT, root.value?.mediaId)
 
             val categoriesFuture = AtomicReference<ListenableFuture<LibraryResult<ImmutableList<MediaItem>>>>()
@@ -53,7 +99,6 @@ class AutoBrowseTest {
             assertTrue(ids.contains(AutoIds.RECENT))
             assertTrue(ids.contains(AutoIds.PLAYLISTS))
             assertTrue(ids.contains(AutoIds.SAVED))
-            assertTrue(ids.contains(AutoIds.HISTORY))
 
             val savedFuture = AtomicReference<ListenableFuture<LibraryResult<ImmutableList<MediaItem>>>>()
             instrumentation.runOnMainSync {
@@ -82,11 +127,15 @@ class AutoBrowseTest {
         try {
             val childrenFuture = AtomicReference<ListenableFuture<LibraryResult<ImmutableList<MediaItem>>>>()
             instrumentation.runOnMainSync {
-                childrenFuture.set(browser.getChildren(AutoIds.HISTORY, 0, 10, null))
+                childrenFuture.set(browser.getChildren(AutoIds.RECENT, 0, 10, null))
             }
             val children = childrenFuture.get().get(15, TimeUnit.SECONDS).value.orEmpty()
-            assumeTrue("Requires authenticated history with at least two tracks", children.size > 1)
-            val item = children.firstOrNull { it.mediaMetadata.isPlayable == true }
+            val trackItems = children.filter { it.mediaId.startsWith("pb:track:") }
+            assumeTrue(
+                "Requires authenticated recent history with at least two tracks",
+                trackItems.size > 1,
+            )
+            val item = trackItems.firstOrNull()
             assumeNotNull("Requires an authenticated catalog with history", item)
 
             instrumentation.runOnMainSync {
@@ -126,21 +175,30 @@ class AutoBrowseTest {
             }
             val playlists = playlistsFuture.get().get(15, TimeUnit.SECONDS).value.orEmpty()
             var selected: MediaItem? = null
+            var selectedAction: MediaItem? = null
             for (playlist in playlists) {
                 val tracksFuture = AtomicReference<ListenableFuture<LibraryResult<ImmutableList<MediaItem>>>>()
                 instrumentation.runOnMainSync {
                     tracksFuture.set(browser.getChildren(playlist.mediaId, 0, 5, null))
                 }
                 val tracks = tracksFuture.get().get(15, TimeUnit.SECONDS).value.orEmpty()
-                if (tracks.size > 1) {
+                val playlistNode = AutoIds.parse(playlist.mediaId) as? AutoNode.Playlist
+                if (playlistNode != null && tracks.count { it.mediaId.startsWith("pb:track:") } > 1) {
+                    val context = AutoContext.Playlist(playlistNode.uuid)
+                    assertEquals(AutoIds.action(context, shuffle = false), tracks[0].mediaId)
+                    assertEquals(AutoIds.action(context, shuffle = true), tracks[1].mediaId)
                     selected = playlist
+                    selectedAction = tracks[0]
                     break
                 }
             }
             assumeNotNull("Requires an authenticated playlist with at least two tracks", selected)
+            assumeNotNull("Playlist play action is missing", selectedAction)
+            assertTrue("Playlist should open instead of playing", selected!!.mediaMetadata.isBrowsable == true)
+            assertEquals(false, selected!!.mediaMetadata.isPlayable)
 
             instrumentation.runOnMainSync {
-                browser.setMediaItem(selected!!)
+                browser.setMediaItem(selectedAction!!)
                 browser.prepare()
                 browser.play()
             }
@@ -172,5 +230,13 @@ class AutoBrowseTest {
         } finally {
             instrumentation.runOnMainSync { browser.release() }
         }
+    }
+
+    private companion object {
+        val EXPECTED_ACTIONS = setOf(
+            net.pipebomb.android.playback.PlaybackSessionActions.COMMAND_SAVE,
+            net.pipebomb.android.playback.PlaybackSessionActions.COMMAND_SHUFFLE,
+            net.pipebomb.android.playback.PlaybackSessionActions.COMMAND_REPEAT,
+        )
     }
 }

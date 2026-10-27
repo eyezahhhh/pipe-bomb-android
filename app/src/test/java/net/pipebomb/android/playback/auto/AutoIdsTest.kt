@@ -14,7 +14,6 @@ class AutoIdsTest {
         assertEquals(AutoNode.Recent, AutoIds.parse(AutoIds.RECENT))
         assertEquals(AutoNode.Playlists, AutoIds.parse(AutoIds.PLAYLISTS))
         assertEquals(AutoNode.Saved, AutoIds.parse(AutoIds.SAVED))
-        assertEquals(AutoNode.History, AutoIds.parse(AutoIds.HISTORY))
     }
 
     @Test
@@ -34,6 +33,7 @@ class AutoIdsTest {
             AutoContext.Album("album"),
             AutoContext.Playlist("playlist"),
             AutoContext.Artist("artist"),
+            AutoContext.Recent("snapshot"),
             AutoContext.SavedTracks,
             AutoContext.History,
             AutoContext.Search("space & symbols"),
