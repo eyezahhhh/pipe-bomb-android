@@ -6,8 +6,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.pipebomb.android.core.model.Track
+import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.data.CatalogRepository
 import net.pipebomb.android.di.ApplicationScope
@@ -21,18 +23,26 @@ class PlaybackSessionActions @Inject constructor(
     private val _saved = MutableStateFlow(false)
     val saved: StateFlow<Boolean> = _saved.asStateFlow()
 
+    private val _savedTracks = MutableStateFlow<Map<TrackKey, Boolean>>(emptyMap())
+    val savedTracks: StateFlow<Map<TrackKey, Boolean>> = _savedTracks.asStateFlow()
+
     init {
         scope.launch {
             controller.currentTrack.collect { track ->
-                _saved.value = track?.bookmarked == true
+                _saved.value = track?.let(::isSaved) == true
             }
         }
     }
+
+    fun isSaved(track: Track): Boolean =
+        _savedTracks.value[track.key] ?: (track.bookmarked == true)
 
     suspend fun setSaved(track: Track, saved: Boolean): Boolean {
         if (catalogRepository.setTrackSaved(track.key, saved) !is ApiResult.Success) {
             return false
         }
+        _savedTracks.update { it + (track.key to saved) }
+        controller.updateQueueTrackSaved(track.key, saved)
         if (controller.currentTrack.value?.key == track.key) {
             controller.updateCurrentTrackSaved(saved)
             _saved.value = saved
@@ -43,7 +53,7 @@ class PlaybackSessionActions @Inject constructor(
     fun toggleSaved() {
         val track = controller.currentTrack.value ?: return
         scope.launch {
-            setSaved(track, !_saved.value)
+            setSaved(track, !isSaved(track))
         }
     }
 

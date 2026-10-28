@@ -48,8 +48,12 @@ Shadow tokens: sm `0 1 2 black 25%`, md `0 4 8 black 35%`, lg `0 10 20 black 45%
 - Never animate playback progress; it is data, not decoration.
 - No shared-element transitions between list and detail in v1; web has none.
 - Top-level tab changes use a short horizontal slide matching tab order plus a fade.
-- Detail pushes slide horizontally (280ms); Now Playing and Queue slide up (300ms) and down (260ms).
-- No choreographed page sequences or shared-element transitions.
+- Detail pushes slide horizontally (280ms); top-level tabs slide horizontally with a
+  fade.
+- The mini player and full player are one progress-driven morph: the card follows the
+  finger while expanding or collapsing, and settles with a 300ms enter / 240ms exit
+  tween when released. The queue is the vertical page above the player.
+- No choreographed page sequences or shared-element transitions between screens.
 
 ## Don't
 

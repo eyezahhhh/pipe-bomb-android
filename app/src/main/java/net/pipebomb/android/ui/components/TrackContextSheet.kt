@@ -173,7 +173,6 @@ fun TrackContextSheet(
                 },
                 label = if (track.bookmarked == true) "Remove from saved" else "Save",
                 onClick = {
-                    onDismiss()
                     onToggleSaved(track, track.bookmarked != true)
                 },
             )

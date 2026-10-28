@@ -54,8 +54,8 @@ reserved for real media/session behaviour and should run nightly or on a label.
 | Auto collection paging | `app/src/test/.../playback/auto/AutoCollectionPagingTest.kt` | action rows, page offsets, page-size limits |
 | Auto recent snapshots | `app/src/test/.../playback/auto/AutoRecentSnapshotStoreTest.kt` | stable tokens and expiry |
 | Auto browse integration | `app/src/androidTest/.../playback/auto/AutoBrowseTest.kt` | root, custom commands, paged actions, full queue, synthetic URI, and Next |
-| Component interaction | `app/src/test/.../ui/interaction/ComponentInteractionTest.kt` | pager selection guards, mini-player swipes/tap/buffering, media action icons/loading, track long-press |
-| Visual goldens | `app/src/test/.../ui/screenshot/ComponentScreenshotTest.kt` | track rows, media actions, mini player, player sheet, design tokens |
+| Component interaction | `app/src/test/.../ui/interaction/ComponentInteractionTest.kt` | pager selection guards, mini-player swipes/tap/buffering, player/queue drawer swipes, collapse drag reporting, media action icons/loading, track long-press |
+| Visual goldens | `app/src/test/.../ui/screenshot/ComponentScreenshotTest.kt` | track rows, media actions, mini player, player overlay and queue drawer, design tokens |
 
 ## Fixtures and determinism
 

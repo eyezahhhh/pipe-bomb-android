@@ -62,13 +62,16 @@ location deletes all downloads and cached audio and restarts the process.
 ## Navigation
 
 Top-level destinations: Home, Search, Library, Settings. Detail destinations:
-album, artist, track, playlist, user, queue, now playing.
+album, artist, track, playlist, user. The player and its queue are an overlay, not
+navigation destinations.
 
 - Use type-safe Navigation 3 routes (see `NavigationKeys.kt` and `Navigation.kt`).
 - Album/artist routes support both database UUIDs and identity keys
   (`pluginId~identityId~value`), matching the web URL convention.
-- The mini player sits above the bottom bar; tapping it opens Now Playing.
-- Queue is a bottom sheet from the player.
+- The mini player sits above the bottom bar and is rendered from the same player host
+  as Now Playing. Tap or drag it up to morph it into the full player; drag down to
+  collapse. The host is an in-window overlay, not a dialog.
+- Queue is the upward page of the player; swipe up from the player to open it.
 - Media notification deep links use the same typed route builders.
 - Back from a deep link lands on the relevant top-level tab, not the launcher home.
 

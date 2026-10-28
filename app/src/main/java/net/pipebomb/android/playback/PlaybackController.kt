@@ -72,6 +72,10 @@ class PlaybackController @Inject constructor(
     private val _currentTrack = MutableStateFlow<Track?>(null)
     val currentTrack: StateFlow<Track?> = _currentTrack.asStateFlow()
 
+    private val _queueTracks = MutableStateFlow<Map<TrackKey, Track>>(emptyMap())
+    val queueTracks: StateFlow<Map<TrackKey, Track>> = _queueTracks.asStateFlow()
+
+    private var queueHydrationJob: Job? = null
     private var originalQueue: List<TrackKey> = emptyList()
     private var retriedFor: String? = null
     private var bufferingSinceMs = 0L
@@ -107,11 +111,20 @@ class PlaybackController @Inject constructor(
                     }
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                        if (!externalQueueMode) return
                         val index = currentMediaItemIndex
                         val key = _state.value.queue.getOrNull(index) ?: return
                         _state.update { it.copy(currentIndex = index) }
-                        externalTracks[key]?.let { _currentTrack.value = it }
+                        val known = externalTracks[key] ?: _queueTracks.value[key]
+                        if (known != null) _currentTrack.value = known
+                        if (!externalQueueMode) {
+                            scope.launch {
+                                val resolved = resolveTrack(key) ?: known ?: placeholderTrack(key)
+                                _queueTracks.update { it + (key to resolved) }
+                                if (_state.value.currentKey == key) {
+                                    _currentTrack.value = resolved
+                                }
+                            }
+                        }
                     }
 
                     override fun onPlaybackStateChanged(playbackState: Int) {
@@ -136,7 +149,7 @@ class PlaybackController @Inject constructor(
                                 }
                             }
 
-                            Player.STATE_ENDED -> advanceOnEnd()
+                            Player.STATE_ENDED -> _state.update { it.copy(isPlaying = false) }
                         }
                     }
 
@@ -168,13 +181,11 @@ class PlaybackController @Inject constructor(
                         .getOrDefault(RepeatMode.Off),
                 )
                 queue.getOrNull(index)?.let { key ->
-                    _currentTrack.value = resolveTrack(key) ?: Track(
-                        trackId = key.trackId,
-                        pluginId = key.pluginId,
-                        libraryId = key.libraryId,
-                        title = key.trackId,
-                    )
+                    val track = resolveTrack(key) ?: placeholderTrack(key)
+                    _currentTrack.value = track
+                    _queueTracks.update { it + (key to track) }
                 }
+                hydrateQueueMetadata(queue)
             }
             restored = true
         }
@@ -241,6 +252,8 @@ class PlaybackController @Inject constructor(
         externalQueueMode = false
         externalTracks = emptyMap()
         originalQueue = keys
+        val keySet = keys.toHashSet()
+        _queueTracks.update { it.filterKeys { key -> key in keySet } }
         _state.update {
             it.copy(
                 queue = keys,
@@ -257,8 +270,13 @@ class PlaybackController @Inject constructor(
     fun playIndex(index: Int) {
         val current = _state.value
         if (index !in current.queue.indices) return
-        if (externalQueueMode && player.mediaItemCount > 1) {
+        if (player.mediaItemCount == current.queue.size) {
             player.seekTo(index, 0)
+            if (player.currentMediaItemIndex == index) {
+                _state.update { it.copy(currentIndex = index, error = null) }
+                _currentTrack.value = externalTracks[current.queue[index]]
+                    ?: _queueTracks.value[current.queue[index]]
+            }
             return
         }
         retriedFor = null
@@ -274,6 +292,7 @@ class PlaybackController @Inject constructor(
         externalTracks = tracks.associateBy { it.key }
         val keys = tracks.map { it.key }
         originalQueue = keys
+        _queueTracks.value = externalTracks
         val index = startIndex.coerceIn(keys.indices)
         _state.update {
             it.copy(
@@ -296,12 +315,16 @@ class PlaybackController @Inject constructor(
         originalQueue = originalQueue + keys
         if (wasEmpty) {
             playCurrent()
+        } else if (!externalQueueMode && player.mediaItemCount == _state.value.queue.size - keys.size) {
+            player.addMediaItems(keys.map(::mediaItemFor))
+            hydrateQueueMetadata(keys)
         }
     }
 
     fun playNext(keys: List<TrackKey>) {
         if (keys.isEmpty()) return
         val currentIndex = _state.value.currentIndex
+        val insertAt = (currentIndex + 1).coerceAtMost(_state.value.queue.size)
         _state.update { current ->
             val queue = current.queue.toMutableList()
             queue.addAll((current.currentIndex + 1).coerceAtMost(queue.size), keys)
@@ -310,6 +333,10 @@ class PlaybackController @Inject constructor(
         val original = originalQueue.toMutableList()
         original.addAll((currentIndex + 1).coerceAtMost(original.size), keys)
         originalQueue = original
+        if (!externalQueueMode && player.mediaItemCount == _state.value.queue.size - keys.size) {
+            player.addMediaItems(insertAt, keys.map(::mediaItemFor))
+            hydrateQueueMetadata(keys)
+        }
     }
 
     fun playNext(key: TrackKey) = playNext(listOf(key))
@@ -332,8 +359,12 @@ class PlaybackController @Inject constructor(
 
     fun next() {
         resetRetry()
-        if (externalQueueMode && player.mediaItemCount > 1) {
-            player.seekToNextMediaItem()
+        if (player.mediaItemCount > 0) {
+            if (player.hasNextMediaItem()) {
+                player.seekToNextMediaItem()
+            } else if (_state.value.repeat == RepeatMode.All) {
+                player.seekTo(0, 0)
+            }
             return
         }
         val queue = _state.value.queue
@@ -350,12 +381,14 @@ class PlaybackController @Inject constructor(
 
     fun previous() {
         resetRetry()
-        if (externalQueueMode && player.mediaItemCount > 1) {
-            player.seekToPreviousMediaItem()
-            return
-        }
-        if (player.currentPosition > 3_000) {
-            player.seekTo(0)
+        if (player.mediaItemCount > 0) {
+            if (player.currentPosition > 3_000) {
+                player.seekTo(0)
+            } else if (player.hasPreviousMediaItem()) {
+                player.seekToPreviousMediaItem()
+            } else {
+                player.seekTo(0)
+            }
             return
         }
         val index = _state.value.currentIndex
@@ -369,6 +402,10 @@ class PlaybackController @Inject constructor(
 
     fun previousTrack() {
         resetRetry()
+        if (player.mediaItemCount > 0) {
+            if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0)
+            return
+        }
         val index = _state.value.currentIndex
         if (index > 0) {
             _state.update { it.copy(currentIndex = index - 1) }
@@ -397,14 +434,10 @@ class PlaybackController @Inject constructor(
     }
 
     private fun applyRepeatMode() {
-        player.repeatMode = if (externalQueueMode) {
-            when (_state.value.repeat) {
-                RepeatMode.Off -> Player.REPEAT_MODE_OFF
-                RepeatMode.All -> Player.REPEAT_MODE_ALL
-                RepeatMode.One -> Player.REPEAT_MODE_ONE
-            }
-        } else {
-            Player.REPEAT_MODE_OFF
+        player.repeatMode = when (_state.value.repeat) {
+            RepeatMode.Off -> Player.REPEAT_MODE_OFF
+            RepeatMode.All -> Player.REPEAT_MODE_ALL
+            RepeatMode.One -> Player.REPEAT_MODE_ONE
         }
     }
 
@@ -427,6 +460,7 @@ class PlaybackController @Inject constructor(
             val after = current.queue.drop(current.currentIndex + 1).shuffled()
             _state.update { it.copy(shuffle = true, queue = before + after) }
         }
+        syncPlayerQueue()
     }
 
     fun removeFromQueue(index: Int) {
@@ -438,16 +472,25 @@ class PlaybackController @Inject constructor(
             clearQueue()
             return
         }
+        removeFromOriginalQueue(removedKey)
         if (index == current.currentIndex) {
-            play(newQueue, index.coerceAtMost(newQueue.lastIndex))
+            _state.update {
+                it.copy(
+                    queue = newQueue,
+                    currentIndex = index.coerceAtMost(newQueue.lastIndex),
+                    positionMs = 0,
+                    durationMs = 0,
+                )
+            }
+            syncPlayerQueue(positionMs = 0, play = true)
         } else {
-            removeFromOriginalQueue(removedKey)
             _state.update {
                 it.copy(
                     queue = newQueue,
                     currentIndex = if (index < it.currentIndex) it.currentIndex - 1 else it.currentIndex,
                 )
             }
+            syncPlayerQueue()
         }
     }
 
@@ -459,15 +502,25 @@ class PlaybackController @Inject constructor(
     }
 
     fun updateCurrentTrackSaved(saved: Boolean) {
-        _currentTrack.value = _currentTrack.value?.copy(bookmarked = saved)
+        val track = _currentTrack.value?.copy(bookmarked = saved) ?: return
+        _currentTrack.value = track
+        _queueTracks.update { it + (track.key to track) }
+    }
+
+    fun updateQueueTrackSaved(key: TrackKey, saved: Boolean) {
+        _queueTracks.update { tracks ->
+            tracks[key]?.let { tracks + (key to it.copy(bookmarked = saved)) } ?: tracks
+        }
     }
 
     fun clearQueue() {
         externalQueueMode = false
         externalTracks = emptyMap()
+        queueHydrationJob?.cancel()
         player.stop()
         player.clearMediaItems()
         _currentTrack.value = null
+        _queueTracks.value = emptyMap()
         originalQueue = emptyList()
         _state.value = PlaybackUiState()
     }
@@ -481,22 +534,24 @@ class PlaybackController @Inject constructor(
         scope.launch {
             _state.update { it.copy(isBuffering = true, error = null) }
             withContext(Dispatchers.Main) { player.pause() }
-            val track = resolveTrack(key) ?: Track(
-                trackId = key.trackId,
-                pluginId = key.pluginId,
-                libraryId = key.libraryId,
-                title = key.trackId,
-            )
+            val queue = _state.value.queue
+            mergeQueueTracks(metadata.local(queue), overwrite = false)
+            val track = resolveTrack(key) ?: placeholderTrack(key)
             if (requestId != playRequestId) return@launch
             _currentTrack.value = track
-            val item = TrackMediaItemFactory.create(track)
+            _queueTracks.update { it + (key to track) }
+            val stateNow = _state.value
+            val items = buildMediaItems(stateNow.queue)
             withContext(Dispatchers.Main) {
                 if (requestId != playRequestId) return@withContext
                 context.startService(Intent(context, PlaybackService::class.java))
-                player.setMediaItem(item)
+                player.setMediaItems(
+                    items,
+                    stateNow.currentIndex.coerceIn(items.indices),
+                    startPositionMs.coerceAtLeast(0),
+                )
                 player.prepare()
-                player.repeatMode = Player.REPEAT_MODE_OFF
-                if (startPositionMs > 0) player.seekTo(startPositionMs)
+                applyRepeatMode()
                 player.play()
                 _state.update {
                     it.copy(
@@ -506,34 +561,98 @@ class PlaybackController @Inject constructor(
                     )
                 }
             }
+            hydrateQueueMetadata(stateNow.queue)
         }
     }
 
     private suspend fun resolveTrack(key: TrackKey): Track? = metadata.resolve(key)
 
-    private fun advanceOnEnd() {
-        val state = _state.value
-        when (state.repeat) {
-            RepeatMode.One -> {
-                player.seekTo(0)
-                player.play()
-            }
+    private fun placeholderTrack(key: TrackKey): Track = Track(
+        trackId = key.trackId,
+        pluginId = key.pluginId,
+        libraryId = key.libraryId,
+        title = key.trackId,
+    )
 
-            RepeatMode.All -> {
-                val next = (state.currentIndex + 1) % state.queue.size.coerceAtLeast(1)
-                _state.update { it.copy(currentIndex = next) }
-                playCurrent()
-            }
+    private fun buildMediaItems(keys: List<TrackKey>): List<MediaItem> = keys.map(::mediaItemFor)
 
-            RepeatMode.Off -> {
-                if (state.currentIndex < state.queue.lastIndex) {
-                    _state.update { it.copy(currentIndex = state.currentIndex + 1) }
-                    playCurrent()
-                } else {
-                    _state.update { it.copy(isPlaying = false) }
-                }
+    private fun mediaItemFor(key: TrackKey): MediaItem =
+        TrackMediaItemFactory.create(
+            externalTracks[key] ?: _queueTracks.value[key] ?: placeholderTrack(key),
+        )
+
+    private fun mergeQueueTracks(tracks: Map<TrackKey, Track>, overwrite: Boolean) {
+        if (tracks.isEmpty()) return
+        _queueTracks.update { current ->
+            if (overwrite) current + tracks else current + tracks.filterKeys { it !in current }
+        }
+    }
+
+    fun ensureQueueTracks(indices: Iterable<Int>) {
+        val queue = _state.value.queue
+        val keys = indices.mapNotNull { queue.getOrNull(it) }.distinct()
+        val missing = keys.filter { _queueTracks.value[it] == null }
+        if (missing.isEmpty()) return
+        scope.launch {
+            mergeQueueTracks(metadata.local(missing), overwrite = false)
+            val remote = metadata.refresh(missing)
+            if (remote.isNotEmpty()) {
+                mergeQueueTracks(remote, overwrite = true)
+                updatePlayerQueueMetadata(remote)
             }
         }
+    }
+
+    private fun hydrateQueueMetadata(keys: List<TrackKey>) {
+        if (keys.isEmpty()) return
+        queueHydrationJob?.cancel()
+        queueHydrationJob = scope.launch {
+            mergeQueueTracks(metadata.local(keys), overwrite = false)
+            val remote = metadata.refresh(keys)
+            if (remote.isNotEmpty()) {
+                mergeQueueTracks(remote, overwrite = true)
+                updatePlayerQueueMetadata(remote)
+            }
+        }
+    }
+
+    private suspend fun updatePlayerQueueMetadata(tracks: Map<TrackKey, Track>) {
+        if (tracks.isEmpty()) return
+        withContext(Dispatchers.Main) {
+            if (externalQueueMode) return@withContext
+            val queue = _state.value.queue
+            if (player.mediaItemCount != queue.size) return@withContext
+            queue.forEachIndexed { index, key ->
+                if (index == player.currentMediaItemIndex) return@forEachIndexed
+                val track = tracks[key] ?: return@forEachIndexed
+                player.replaceMediaItem(index, TrackMediaItemFactory.create(track))
+            }
+        }
+    }
+
+    private fun syncPlayerQueue(
+        positionMs: Long = player.currentPosition.coerceAtLeast(0),
+        play: Boolean = player.isPlaying,
+    ) {
+        if (externalQueueMode) return
+        val state = _state.value
+        if (state.queue.isEmpty()) {
+            player.clearMediaItems()
+            return
+        }
+        if (player.mediaItemCount == 0) {
+            if (play) playCurrent(positionMs)
+            return
+        }
+        val items = buildMediaItems(state.queue)
+        val index = state.currentIndex.coerceIn(items.indices)
+        player.setMediaItems(items, index, positionMs.coerceAtLeast(0))
+        player.prepare()
+        applyRepeatMode()
+        if (play) player.play() else player.pause()
+        _currentTrack.value = externalTracks[state.queue[index]]
+            ?: _queueTracks.value[state.queue[index]]
+            ?: _currentTrack.value
     }
 
     private fun resetRetry() {
@@ -577,14 +696,9 @@ class PlaybackController @Inject constructor(
         retriedFor = key.toString()
         bufferingSinceMs = 0
         resolver.invalidate(key)
-        if (externalQueueMode && player.mediaItemCount > 0) {
+        if (player.mediaItemCount > 0) {
             val index = player.currentMediaItemIndex.coerceIn(0, player.mediaItemCount - 1)
-            val track = externalTracks[key] ?: Track(
-                trackId = key.trackId,
-                pluginId = key.pluginId,
-                libraryId = key.libraryId,
-                title = key.trackId,
-            )
+            val track = externalTracks[key] ?: _queueTracks.value[key] ?: placeholderTrack(key)
             player.replaceMediaItem(index, TrackMediaItemFactory.create(track))
             player.prepare()
             player.seekTo(positionMs)

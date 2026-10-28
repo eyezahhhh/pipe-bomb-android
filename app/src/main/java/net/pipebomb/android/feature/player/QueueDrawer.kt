@@ -9,28 +9,32 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.pipebomb.android.R
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.Track
+import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.playback.PlaybackUiState
 import net.pipebomb.android.playback.RepeatMode
+import net.pipebomb.android.ui.components.LocalDownloadedTrackKeys
 import net.pipebomb.android.ui.components.PipeBombButton
 import net.pipebomb.android.ui.components.PipeBombButtonVariant
 import net.pipebomb.android.ui.components.PipeBombIconButton
@@ -39,33 +43,62 @@ import net.pipebomb.android.ui.components.PipeBombIconButtonTone
 import net.pipebomb.android.ui.components.ResourceImage
 
 @Composable
-fun QueueScreen(
+fun QueueDrawer(
+    state: PlaybackUiState,
+    queue: List<TrackKey>,
+    tracksByKey: Map<TrackKey, Track>,
+    isOnline: Boolean,
+    onEnsureTracks: (Iterable<Int>) -> Unit,
+    onSelectIndex: (Int) -> Unit,
+    onClearQueue: () -> Unit,
+    onRemoveFromQueue: (Int) -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    isOnline: Boolean = true,
-    viewModel: QueueViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    val tracks by viewModel.tracks.collectAsStateWithLifecycle()
+    val colors = PipeBombTheme.colors
+    LaunchedEffect(queue) {
+        onEnsureTracks(queue.indices)
+    }
 
     Column(
-        modifier = modifier.fillMaxSize().padding(PipeBombTheme.spacing.lg),
+        modifier = modifier
+            .fillMaxSize()
+            .testTag("queue-drawer")
+            .background(colors.bgSurface)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = PipeBombTheme.spacing.lg),
         verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
     ) {
+        Box(
+            modifier = Modifier
+                .padding(top = PipeBombTheme.spacing.sm, bottom = PipeBombTheme.spacing.xs)
+                .align(Alignment.CenterHorizontally)
+                .size(width = 40.dp, height = 4.dp)
+                .clip(PipeBombTheme.shapes.pill)
+                .background(colors.borderStrong),
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
+            PipeBombIconButton(
+                icon = ImageVector.vectorResource(R.drawable.ic_tabler_chevron_down),
+                contentDescription = "Back to player",
+                onClick = onBack,
+                tone = PipeBombIconButtonTone.Neutral,
+            )
             Text(
                 text = "Up Next",
                 style = PipeBombTheme.typography.sectionHeading,
-                color = PipeBombTheme.colors.fgPrimary,
+                color = colors.fgPrimary,
             )
             PipeBombButton(
                 text = "Clear",
-                onClick = viewModel::clear,
+                onClick = onClearQueue,
                 variant = PipeBombButtonVariant.Ghost,
-                enabled = state.queue.isNotEmpty(),
+                enabled = queue.isNotEmpty(),
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.lg)) {
@@ -88,25 +121,29 @@ fun QueueScreen(
                 active = state.repeat != RepeatMode.Off,
             )
         }
-        if (state.queue.isEmpty()) {
+        if (queue.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     text = "The queue is empty",
                     style = PipeBombTheme.typography.bodySecondary,
-                    color = PipeBombTheme.colors.fgTertiary,
+                    color = colors.fgTertiary,
                 )
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap)) {
-                itemsIndexed(state.queue, key = { index, key -> "$index:$key" }) { index, key ->
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap),
+            ) {
+                itemsIndexed(queue, key = { index, key -> "$index:$key" }) { index, key ->
                     QueueRow(
-                        track = tracks[key],
+                        track = tracksByKey[key],
+                        trackKey = key.toString(),
                         position = index + 1,
                         isCurrent = index == state.currentIndex,
                         isPlaying = index == state.currentIndex && state.isPlaying,
                         isOnline = isOnline,
-                        onClick = { viewModel.playIndex(index) },
-                        onRemove = { viewModel.remove(index) },
+                        onClick = { onSelectIndex(index) },
+                        onRemove = { onRemoveFromQueue(index) },
                     )
                 }
             }
@@ -138,6 +175,7 @@ private fun QueueStatus(icon: Int, label: String, active: Boolean) {
 @Composable
 private fun QueueRow(
     track: Track?,
+    trackKey: String,
     position: Int,
     isCurrent: Boolean,
     isPlaying: Boolean,
@@ -182,6 +220,14 @@ private fun QueueRow(
                 color = colors.fgSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (LocalDownloadedTrackKeys.current.contains(trackKey)) {
+            Icon(
+                imageVector = ImageVector.vectorResource(R.drawable.ic_tabler_check_filled),
+                contentDescription = "Downloaded",
+                tint = colors.accentPrimary,
+                modifier = Modifier.size(16.dp),
             )
         }
         PipeBombIconButton(

@@ -9,6 +9,8 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
 
+private const val AUDIO_SESSION_TIMEOUT_SECONDS = 120
+
 class NoServerConfiguredException : IllegalStateException("No server configured")
 
 class ApiClientFactory(
@@ -24,6 +26,15 @@ class ApiClientFactory(
         OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .addInterceptor(ServerUrlRewriteInterceptor(serverUrlProvider))
+            .addInterceptor { chain ->
+                val request = chain.request()
+                if (request.url.encodedPath.endsWith("/audio")) {
+                    chain.withReadTimeout(AUDIO_SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                        .proceed(request)
+                } else {
+                    chain.proceed(request)
+                }
+            }
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -45,6 +46,44 @@ fun MiniPlayer(
     onEnsureTracks: (Iterable<Int>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = PipeBombTheme.spacing.sm,
+                vertical = PipeBombTheme.spacing.xs,
+            ),
+    ) {
+        MiniPlayerCard(
+            queue = queue,
+            currentIndex = currentIndex,
+            tracksByKey = tracksByKey,
+            isPlaying = isPlaying,
+            isBuffering = isBuffering,
+            onOpen = onOpen,
+            onToggle = onToggle,
+            onSelectIndex = onSelectIndex,
+            onEnsureTracks = onEnsureTracks,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp),
+        )
+    }
+}
+
+@Composable
+fun MiniPlayerCard(
+    queue: List<TrackKey>,
+    currentIndex: Int,
+    tracksByKey: Map<TrackKey, Track>,
+    isPlaying: Boolean,
+    isBuffering: Boolean,
+    onOpen: () -> Unit,
+    onToggle: () -> Unit,
+    onSelectIndex: (Int) -> Unit,
+    onEnsureTracks: (Iterable<Int>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val pageCount = queue.size.coerceAtLeast(1)
     val pagerState = rememberPagerState(
         initialPage = currentIndex.coerceIn(0, pageCount - 1),
@@ -61,9 +100,6 @@ fun MiniPlayer(
 
     Row(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = PipeBombTheme.spacing.sm, vertical = PipeBombTheme.spacing.xs)
-            .height(64.dp)
             .clip(PipeBombTheme.shapes.medium)
             .background(PipeBombTheme.colors.bgSurface)
             .testTag("mini-player")
@@ -91,8 +127,7 @@ fun MiniPlayer(
                 val pageTrack = tracksByKey[queue[page]]
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight()
+                        .fillMaxSize()
                         .clickable(onClick = onOpen),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm),

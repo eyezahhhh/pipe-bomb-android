@@ -31,10 +31,10 @@ Phone                          Tablet / foldable
 
 - Phone bottom navigation: Home, Search, Library, Settings.
 - Tablet/foldable: navigation rail, optional two-pane list/detail.
-- Mini player persists above the bottom bar on every top-level screen. Hide it only
-  on full-screen Now Playing and immersive auth/connect flows.
-- Now Playing is a full-screen destination or large bottom sheet; queue is a bottom
-  sheet opened from it.
+- Mini player persists above the bottom bar on every top-level screen. Tapping or
+  dragging it up morphs it into the full player.
+- Now Playing is an in-window overlay, not a dialog. Swipe up inside it to reveal the
+  queue as the next page; swipe down returns to Now Playing.
 - Edge-to-edge with system bar insets; the base background extends behind bars.
 - Use a 16dp content inset. Grid gaps 16dp, list gaps 3dp.
 
@@ -69,11 +69,17 @@ Mini player: horizontal queue-track pager for art/title/artist, with fixed play/
 Full player: full-width horizontal queue-track pager with neighbouring cover pages,
 large art, title, artist, seek, transport, shuffle/repeat, save, queue. Keep the web's
 control order: shuffle, previous, play/pause, next, repeat.
-- Swipe horizontally anywhere in the player pager to change queue tracks; vertical drag
-  dismisses the sheet. Do not rotate, arc, or scale the artwork during the swipe.
+- Tap the mini player, or drag it upward, to morph the card into the full player. The
+  card's top edge follows the finger; content crossfades as the card grows.
+- Swipe down on the player page to collapse it back into the mini player, following the
+  finger. Swipe up to open the queue page; swipe down on the queue returns to the
+  player page.
+- Swipe horizontally anywhere in the player pager to change queue tracks. Do not
+  rotate, arc, or scale the artwork during the swipe.
 No fake volume slider on phones; hardware/system volume owns it.
 
 **Queue**
+Upward page of the player drawer, with a grabber and a back-to-player chevron.
 "Up Next" header with clear action, current track highlighted, past items dimmed to
 50%, drag handles in edit mode. Swipe-to-remove only if it does not conflict with
 reorder; prefer an explicit edit mode.

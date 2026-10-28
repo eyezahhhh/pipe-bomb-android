@@ -18,10 +18,18 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import net.pipebomb.android.MainActivity
 import net.pipebomb.android.playback.auto.AutoLibrarySessionCallback
 import javax.inject.Inject
+
+private data class MediaButtonState(
+    val shuffle: Boolean,
+    val repeat: RepeatMode,
+    val hasTrack: Boolean,
+    val saved: Boolean,
+)
 
 @AndroidEntryPoint
 @OptIn(UnstableApi::class)
@@ -64,15 +72,20 @@ class PlaybackService : MediaLibraryService() {
 
         layoutJob = layoutScope.launch {
             combine(
-                controller.state,
+                controller.state.map { it.shuffle to it.repeat },
                 controller.currentTrack,
                 actions.saved,
-            ) { state, track, saved ->
-                Triple(state, track != null, saved)
+            ) { playback, track, saved ->
+                MediaButtonState(
+                    shuffle = playback.first,
+                    repeat = playback.second,
+                    hasTrack = track != null,
+                    saved = saved,
+                )
             }
                 .distinctUntilChanged()
-                .collect { (state, hasTrack, saved) ->
-                    session.setCustomLayout(customLayout(state, hasTrack, saved))
+                .collect { state ->
+                    session.setMediaButtonPreferences(mediaButtonPreferences(state))
                 }
         }
     }
@@ -95,24 +108,14 @@ class PlaybackService : MediaLibraryService() {
         super.onDestroy()
     }
 
-    private fun customLayout(
-        state: PlaybackUiState,
-        hasTrack: Boolean,
-        saved: Boolean,
-    ): List<CommandButton> = listOf(
-        CommandButton.Builder(
-            if (saved) CommandButton.ICON_BOOKMARK_FILLED else CommandButton.ICON_BOOKMARK_UNFILLED,
-        )
-            .setSessionCommand(SessionCommand(PlaybackSessionActions.COMMAND_SAVE, Bundle.EMPTY))
-            .setDisplayName(if (saved) "Saved" else "Save")
-            .setEnabled(hasTrack)
-            .build(),
+    private fun mediaButtonPreferences(state: MediaButtonState): List<CommandButton> = listOf(
         CommandButton.Builder(
             if (state.shuffle) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF,
         )
             .setSessionCommand(SessionCommand(PlaybackSessionActions.COMMAND_SHUFFLE, Bundle.EMPTY))
             .setDisplayName(if (state.shuffle) "Shuffle on" else "Shuffle off")
-            .setEnabled(hasTrack)
+            .setSlots(CommandButton.SLOT_OVERFLOW)
+            .setEnabled(state.hasTrack)
             .build(),
         CommandButton.Builder(
             when (state.repeat) {
@@ -129,7 +132,19 @@ class PlaybackService : MediaLibraryService() {
                     RepeatMode.One -> "Repeat one"
                 },
             )
-            .setEnabled(hasTrack)
+            .setSlots(CommandButton.SLOT_OVERFLOW)
+            .setEnabled(state.hasTrack)
+            .build(),
+        CommandButton.Builder(
+            if (state.saved) CommandButton.ICON_BOOKMARK_FILLED else CommandButton.ICON_BOOKMARK_UNFILLED,
+        )
+            .setSessionCommand(SessionCommand(PlaybackSessionActions.COMMAND_SAVE, Bundle.EMPTY))
+            .setDisplayName(if (state.saved) "Saved" else "Save")
+            .setSlots(
+                CommandButton.SLOT_FORWARD_SECONDARY,
+                CommandButton.SLOT_OVERFLOW,
+            )
+            .setEnabled(state.hasTrack)
             .build(),
     )
 }

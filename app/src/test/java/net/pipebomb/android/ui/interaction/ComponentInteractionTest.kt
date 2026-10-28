@@ -2,6 +2,7 @@ package net.pipebomb.android.ui.interaction
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -15,12 +16,15 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import net.pipebomb.android.core.design.theme.PipeBombTheme
-import net.pipebomb.android.feature.player.NowPlayingSheet
+import net.pipebomb.android.feature.player.NowPlayingContent
 import net.pipebomb.android.test.TestFixtures
+import net.pipebomb.android.ui.components.LocalDownloadedTrackKeys
 import net.pipebomb.android.ui.components.MediaActions
 import net.pipebomb.android.ui.components.TrackRow
 import net.pipebomb.android.ui.playback.MiniPlayer
@@ -57,6 +61,28 @@ class ComponentInteractionTest {
         }
         composeRule.onNodeWithContentDescription("Keep downloaded").performClick()
         composeRule.runOnIdle { assertEquals(1, clicks) }
+    }
+
+    @Test
+    fun trackRowShowsDownloadedTick() {
+        val track = tracks.first()
+        composeRule.setContent {
+            PipeBombTheme {
+                CompositionLocalProvider(
+                    LocalDownloadedTrackKeys provides setOf(track.key.toString()),
+                ) {
+                    TrackRow(
+                        track = track,
+                        isCurrent = false,
+                        isPlaying = false,
+                        onClick = {},
+                        onPlay = {},
+                        onMore = {},
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithContentDescription("Downloaded").assertIsDisplayed()
     }
 
     @Test
@@ -158,7 +184,7 @@ class ComponentInteractionTest {
         composeRule.setContent {
             PipeBombTheme {
                 Box(Modifier) {
-                    NowPlayingSheet(
+                    NowPlayingContent(
                         track = tracks[1],
                         state = TestFixtures.playback(),
                         queue = queue,
@@ -175,8 +201,12 @@ class ComponentInteractionTest {
                         onSeek = {},
                         onShuffle = {},
                         onRepeat = {},
-                        onOpenQueue = {},
                         onDismiss = {},
+                        onCollapseDrag = {},
+                        onCollapseDragEnd = {},
+                        collapseEnabled = false,
+                        onClearQueue = {},
+                        onRemoveFromQueue = {},
                     )
                 }
             }
@@ -205,7 +235,7 @@ class ComponentInteractionTest {
         composeRule.setContent {
             PipeBombTheme {
                 Box(Modifier) {
-                    NowPlayingSheet(
+                    NowPlayingContent(
                         track = tracks[1],
                         state = TestFixtures.playback(),
                         queue = queue,
@@ -222,8 +252,12 @@ class ComponentInteractionTest {
                         onSeek = {},
                         onShuffle = {},
                         onRepeat = {},
-                        onOpenQueue = {},
                         onDismiss = {},
+                        onCollapseDrag = {},
+                        onCollapseDragEnd = {},
+                        collapseEnabled = false,
+                        onClearQueue = {},
+                        onRemoveFromQueue = {},
                     )
                 }
             }
@@ -240,6 +274,117 @@ class ComponentInteractionTest {
         composeRule.mainClock.advanceTimeBy(1_500)
         composeRule.waitForIdle()
         composeRule.runOnIdle { assertEquals(1, selected) }
+    }
+
+    @Test
+    fun playerDrawerSwipeUpOpensQueue() {
+        setPlayer()
+
+        composeRule.onNodeWithTag("player-drawer").performTouchInput { swipeUp() }
+        composeRule.mainClock.advanceTimeBy(1_500)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Up Next").assertIsDisplayed()
+    }
+
+    @Test
+    fun playerQueueButtonOpensDrawer() {
+        setPlayer()
+
+        composeRule.onNodeWithContentDescription("Queue").performClick()
+        composeRule.mainClock.advanceTimeBy(1_500)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Up Next").assertIsDisplayed()
+    }
+
+    @Test
+    fun playerPagerSwipeUpOpensQueue() {
+        setPlayer()
+
+        composeRule.onNodeWithTag("player-pager").performTouchInput { swipeUp() }
+        composeRule.mainClock.advanceTimeBy(1_500)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Up Next").assertIsDisplayed()
+    }
+
+    @Test
+    fun queueDrawerSwipeDownReturnsToPlayer() {
+        setPlayer()
+        composeRule.onNodeWithContentDescription("Queue").performClick()
+        composeRule.mainClock.advanceTimeBy(1_500)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("queue-drawer").performTouchInput { swipeDown() }
+        composeRule.mainClock.advanceTimeBy(1_500)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("player-pager").assertIsDisplayed()
+    }
+
+    @Test
+    fun queueRowSelectionKeepsDrawerOpen() {
+        var selected = -1
+        setPlayer(onSelectIndex = { selected = it })
+        composeRule.onNodeWithContentDescription("Queue").performClick()
+        composeRule.mainClock.advanceTimeBy(1_500)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Track 2").performClick()
+        composeRule.mainClock.advanceTimeBy(300)
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle { assertEquals(2, selected) }
+        composeRule.onNodeWithText("Up Next").assertIsDisplayed()
+    }
+
+    @Test
+    fun playerPageDragDownReportsCollapse() {
+        var collapse = 0f
+        setPlayer(onCollapseDrag = { collapse += it })
+
+        composeRule.onNodeWithTag("player-drawer").performTouchInput { swipeDown() }
+        composeRule.mainClock.advanceTimeBy(1_500)
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle { assertTrue(collapse > 0f) }
+    }
+
+    private fun setPlayer(
+        onSelectIndex: (Int) -> Unit = {},
+        onDismiss: () -> Unit = {},
+        onCollapseDrag: (Float) -> Unit = {},
+    ) {
+        composeRule.setContent {
+            PipeBombTheme {
+                Box(Modifier) {
+                    NowPlayingContent(
+                        track = tracks[1],
+                        state = TestFixtures.playback(),
+                        queue = queue,
+                        currentIndex = 1,
+                        tracksByKey = tracksByKey,
+                        onEnsureTracks = {},
+                        onSelectIndex = onSelectIndex,
+                        onToggle = {},
+                        onNext = {},
+                        onPrevious = {},
+                        onSeek = {},
+                        onShuffle = {},
+                        onRepeat = {},
+                        onDismiss = onDismiss,
+                        onCollapseDrag = onCollapseDrag,
+                        onCollapseDragEnd = {},
+                        collapseEnabled = true,
+                        onClearQueue = {},
+                        onRemoveFromQueue = {},
+                    )
+                }
+            }
+        }
+        composeRule.mainClock.advanceTimeBy(1_000)
+        composeRule.waitForIdle()
     }
 
     private fun setMiniPlayer(

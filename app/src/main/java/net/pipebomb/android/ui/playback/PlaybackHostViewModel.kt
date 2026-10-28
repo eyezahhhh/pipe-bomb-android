@@ -4,28 +4,18 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
-import net.pipebomb.android.data.TrackMetadataRepository
 import net.pipebomb.android.playback.PlaybackController
 import net.pipebomb.android.playback.PlaybackSessionActions
 import net.pipebomb.android.playback.PlaybackUiState
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
-
-data class SavedState(
-    val trackKey: TrackKey? = null,
-    val saved: Boolean = false,
-)
 
 @Immutable
 data class PlaybackQueueState(
@@ -36,7 +26,6 @@ data class PlaybackQueueState(
 @HiltViewModel
 class PlaybackHostViewModel @Inject constructor(
     private val controller: PlaybackController,
-    private val metadata: TrackMetadataRepository,
     private val actions: PlaybackSessionActions,
 ) : ViewModel() {
     val state: StateFlow<PlaybackUiState> = controller.state
@@ -66,39 +55,14 @@ class PlaybackHostViewModel @Inject constructor(
             PlaybackQueueState(controller.state.value.queue, controller.state.value.currentIndex),
         )
 
-    private val _queueTracks = MutableStateFlow<Map<TrackKey, Track>>(emptyMap())
-    val queueTracks: StateFlow<Map<TrackKey, Track>> = _queueTracks.asStateFlow()
-    private val tracksInFlight = ConcurrentHashMap.newKeySet<TrackKey>()
+    val queueTracks: StateFlow<Map<TrackKey, Track>> = controller.queueTracks
 
-    private val _saved = MutableStateFlow(SavedState())
-    val saved: StateFlow<SavedState> = _saved.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            controller.currentTrack.collect { track ->
-                _saved.value = SavedState(
-                    trackKey = track?.key,
-                    saved = track?.bookmarked == true,
-                )
-                if (track != null) {
-                    _queueTracks.update { it + (track.key to track) }
-                }
-            }
-        }
-        viewModelScope.launch {
-            controller.state
-                .map { it.queue to it.currentIndex }
-                .distinctUntilChanged()
-                .collect { (queue, index) ->
-                    hydrateQueueTracks(queue)
-                    ensureQueueTracks((index - 2)..(index + 2))
-                }
-        }
-    }
+    val savedTracks: StateFlow<Map<TrackKey, Boolean>> = actions.savedTracks
 
     fun play(keys: List<TrackKey>, index: Int) = controller.play(keys, index)
     fun playNow(key: TrackKey) = controller.playNow(key)
     fun playIndex(index: Int) = controller.playIndex(index)
+    fun removeFromQueue(index: Int) = controller.removeFromQueue(index)
     fun toggle() = controller.toggle()
     fun next() = controller.next()
     fun previous() = controller.previous()
@@ -118,59 +82,15 @@ class PlaybackHostViewModel @Inject constructor(
 
     fun setSaved(track: Track, saved: Boolean) {
         viewModelScope.launch {
-            if (actions.setSaved(track, saved)) {
-                applySaved(track, saved)
-            }
+            actions.setSaved(track, saved)
         }
     }
 
     fun toggleSaved() {
         actions.toggleSaved()
     }
+
     fun ensureQueueTracks(indices: Iterable<Int>) {
-        val queue = controller.state.value.queue
-        val keys = indices
-            .mapNotNull { queue.getOrNull(it) }
-            .distinct()
-            .filter { _queueTracks.value[it] == null && tracksInFlight.add(it) }
-        if (keys.isEmpty()) return
-        viewModelScope.launch {
-            try {
-                mergeQueueTracks(metadata.local(keys))
-                mergeQueueTracks(metadata.refresh(keys))
-            } finally {
-                keys.forEach(tracksInFlight::remove)
-            }
-        }
-    }
-
-    private fun hydrateQueueTracks(queue: List<TrackKey>) {
-        if (queue.isEmpty()) {
-            _queueTracks.value = emptyMap()
-            return
-        }
-        viewModelScope.launch {
-            val local = metadata.local(queue)
-            val keys = queue.toHashSet()
-            _queueTracks.update { current ->
-                (current + local).filterKeys { it in keys }
-            }
-        }
-    }
-
-    private fun mergeQueueTracks(tracks: Map<TrackKey, Track>) {
-        if (tracks.isEmpty()) return
-        _queueTracks.update { current -> current + tracks }
-    }
-
-    private fun applySaved(track: Track, saved: Boolean) {
-        if (controller.currentTrack.value?.key == track.key) {
-            _saved.value = SavedState(trackKey = track.key, saved = saved)
-        }
-        _queueTracks.update { current ->
-            current[track.key]?.let { cached ->
-                current + (track.key to cached.copy(bookmarked = saved))
-            } ?: current
-        }
+        controller.ensureQueueTracks(indices)
     }
 }

@@ -32,6 +32,3 @@ data class TrackRoute(
     val libraryId: String,
     val trackId: String,
 ) : NavKey
-
-@Serializable
-data object Queue : NavKey

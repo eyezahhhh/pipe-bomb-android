@@ -231,8 +231,8 @@ class CatalogRepository @Inject constructor(
         return result
     }
 
-    suspend fun setTrackSaved(key: TrackKey, saved: Boolean): ApiResult<Unit> =
-        apiCall {
+    suspend fun setTrackSaved(key: TrackKey, saved: Boolean): ApiResult<Unit> {
+        val result = apiCall {
             val response = if (saved) {
                 apiClientFactory.requireApi().saveTrack(key.pluginId, key.libraryId, key.trackId)
             } else {
@@ -240,6 +240,9 @@ class CatalogRepository @Inject constructor(
             }
             if (!response.isSuccessful) throw HttpException(response)
         }
+        if (result is ApiResult.Success) trackCache.remove(key)
+        return result
+    }
 
     suspend fun setAlbumSaved(albumUuid: String, saved: Boolean): ApiResult<Unit> =
         apiCall {

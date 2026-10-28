@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -43,7 +46,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,21 +65,20 @@ import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.feature.album.AlbumScreen
 import net.pipebomb.android.feature.artist.ArtistScreen
 import net.pipebomb.android.feature.downloads.DownloadEffect
-import net.pipebomb.android.feature.downloads.DownloadHostState
 import net.pipebomb.android.feature.downloads.DownloadHostViewModel
 import net.pipebomb.android.data.download.DownloadCollectionItem
 import net.pipebomb.android.data.download.DownloadCollectionType
+import net.pipebomb.android.data.download.DownloadState
 import net.pipebomb.android.feature.home.HomeScreen
 import net.pipebomb.android.feature.library.LibraryScreen
 import net.pipebomb.android.feature.playlist.PlaylistScreen
 import net.pipebomb.android.feature.settings.SettingsScreen
-import net.pipebomb.android.feature.player.NowPlayingSheet
-import net.pipebomb.android.feature.player.QueueScreen
 import net.pipebomb.android.feature.search.SearchScreen
+import net.pipebomb.android.ui.components.LocalDownloadedTrackKeys
 import net.pipebomb.android.ui.components.OfflineBanner
 import net.pipebomb.android.ui.components.PipeBombSnackbarHost
 import net.pipebomb.android.ui.components.TrackContextSheet
-import net.pipebomb.android.ui.playback.MiniPlayer
+import net.pipebomb.android.ui.playback.PlayerHost
 import net.pipebomb.android.ui.playback.PlaybackHostViewModel
 import net.pipebomb.android.ui.ConnectivityViewModel
 
@@ -102,6 +107,11 @@ fun MainNavigation() {
     val playbackHost: PlaybackHostViewModel = hiltViewModel()
     val downloadHost: DownloadHostViewModel = hiltViewModel()
     val downloadState by downloadHost.state.collectAsStateWithLifecycle()
+    val downloadedTrackKeys = remember(downloadState.downloads) {
+        downloadState.downloads
+            .filter { it.state == DownloadState.Completed }
+            .mapTo(mutableSetOf()) { it.entity.trackKey }
+    }
     val connectivity: ConnectivityViewModel = hiltViewModel()
     val isOnline by connectivity.isOnline.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -109,7 +119,14 @@ fun MainNavigation() {
     var blockedRemovalTitles by remember { mutableStateOf<List<String>?>(null) }
     var previousOnline by remember { mutableStateOf(isOnline) }
     val currentKey by playbackHost.currentKey.collectAsStateWithLifecycle()
+    val savedTracks by playbackHost.savedTracks.collectAsStateWithLifecycle()
     val playing by playbackHost.isPlaying.collectAsStateWithLifecycle()
+    val playbackQueue by playbackHost.queueState.collectAsStateWithLifecycle()
+    var miniRect by remember { mutableStateOf<Rect?>(null) }
+
+    LaunchedEffect(playbackQueue.queue.isEmpty()) {
+        if (playbackQueue.queue.isEmpty()) playerOpen = false
+    }
 
     LaunchedEffect(Unit) {
         downloadHost.effects.collect { effect ->
@@ -147,52 +164,54 @@ fun MainNavigation() {
     }
 
     fun back() {
-        val fromQueue = backStack.lastOrNull() is Queue
         if (backStack.size > 1) {
             backStack.removeLastOrNull()
         }
-        if (fromQueue) playerOpen = true
     }
 
-    Scaffold(
-        containerColor = PipeBombTheme.colors.bgBase,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        snackbarHost = { PipeBombSnackbarHost(snackbarHostState) },
-        topBar = {
-            Column {
-                TopBar(
-                    title = when (current) {
-                        Home -> "Home"
-                        Search -> "Search"
-                        Library -> "Library"
-                        Settings -> "Settings"
-                        is AlbumRoute -> "Album"
-                        is ArtistRoute -> "Artist"
-                        is PlaylistRoute -> "Playlist"
-                        is TrackRoute -> "Track"
-                        Queue -> "Queue"
-                        else -> "Pipe Bomb"
-                    },
-                canGoBack = backStack.size > 1,
-                onBack = { back() },
-                )
-                if (!isOnline) OfflineBanner(onOpenDownloads = ::openDownloads)
-            }
-        },
-        bottomBar = {
-            Column {
-                    MiniPlayerHost(
-                        playbackHost = playbackHost,
-                        onOpen = { playerOpen = true },
+    CompositionLocalProvider(LocalDownloadedTrackKeys provides downloadedTrackKeys) {
+        Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = PipeBombTheme.colors.bgBase,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            snackbarHost = { PipeBombSnackbarHost(snackbarHostState) },
+            topBar = {
+                Column {
+                    TopBar(
+                        title = when (current) {
+                            Home -> "Home"
+                            Search -> "Search"
+                            Library -> "Library"
+                            Settings -> "Settings"
+                            is AlbumRoute -> "Album"
+                            is ArtistRoute -> "Artist"
+                            is PlaylistRoute -> "Playlist"
+                            is TrackRoute -> "Track"
+                            else -> "Pipe Bomb"
+                        },
+                        canGoBack = backStack.size > 1,
+                        onBack = { back() },
                     )
-                BottomNavigation(
-                    tabs = tabs,
-                    selected = selectedTab,
-                    onSelect = ::selectTab,
-                )
-            }
-        },
-    ) { padding ->
+                    if (!isOnline) OfflineBanner(onOpenDownloads = ::openDownloads)
+                }
+            },
+            bottomBar = {
+                Column {
+                    if (playbackQueue.queue.isNotEmpty()) {
+                        MiniPlayerSlot(
+                            onRectChanged = { rect ->
+                                if (rect != miniRect) miniRect = rect
+                            },
+                        )
+                    }
+                    BottomNavigation(
+                        tabs = tabs,
+                        selected = selectedTab,
+                        onSelect = ::selectTab,
+                    )
+                }
+            },
+        ) { padding ->
         NavDisplay(
             backStack = backStack,
             modifier = Modifier.padding(padding),
@@ -201,28 +220,6 @@ fun MainNavigation() {
                 val fromKey = initialState.key as? String
                 val toKey = targetState.key as? String
                 when {
-                    isQueueRoute(toKey) -> {
-                        (slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Up,
-                            animationSpec = tween(300, easing = navigationEasing),
-                        ) + fadeIn(tween(160))) togetherWith
-                            (slideOutOfContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Up,
-                                animationSpec = tween(300, easing = navigationEasing),
-                            ) + fadeOut(tween(160)))
-                    }
-
-                    isQueueRoute(fromKey) -> {
-                        (slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Down,
-                            animationSpec = tween(260, easing = navigationEasing),
-                        ) + fadeIn(tween(140))) togetherWith
-                            (slideOutOfContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Down,
-                                animationSpec = tween(260, easing = navigationEasing),
-                            ) + fadeOut(tween(140)))
-                    }
-
                     isTopLevelRoute(fromKey) && isTopLevelRoute(toKey) -> {
                         val direction = if (tabIndex(toKey) >= tabIndex(fromKey)) 1 else -1
                         (fadeIn(tween(160)) + slideInHorizontally(
@@ -265,17 +262,6 @@ fun MainNavigation() {
                 val fromKey = initialState.key as? String
                 val toKey = targetState.key as? String
                 when {
-                    isQueueRoute(fromKey) -> {
-                        (slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Down,
-                            animationSpec = tween(240, easing = navigationEasing),
-                        ) + fadeIn(tween(140))) togetherWith
-                            (slideOutOfContainer(
-                                AnimatedContentTransitionScope.SlideDirection.Down,
-                                animationSpec = tween(240, easing = navigationEasing),
-                            ) + fadeOut(tween(140)))
-                    }
-
                     routeDepth(toKey) < routeDepth(fromKey) -> {
                         (slideIntoContainer(
                             AnimatedContentTransitionScope.SlideDirection.Right,
@@ -371,7 +357,6 @@ fun MainNavigation() {
                     )
                 }
                 entry<Settings> { SettingsScreen() }
-                entry<Queue> { QueueScreen(isOnline = isOnline) }
                 entry<AlbumRoute> { route ->
                     AlbumScreen(
                         albumId = route.albumId,
@@ -431,26 +416,10 @@ fun MainNavigation() {
                 entry<TrackRoute> { route -> PlaceholderScreen("Track", route.trackId) }
             },
         )
-        if (playerOpen) {
-            PlayerOverlay(
-                playbackHost = playbackHost,
-                onDismiss = { playerOpen = false },
-                onOpenQueue = {
-                    playerOpen = false
-                    open(Queue)
-                },
-                onOpenArtist = {
-                    playerOpen = false
-                    open(ArtistRoute(it))
-                },
-                downloadState = downloadState,
-                isOnline = isOnline,
-                onDownload = downloadHost::start,
-                onRemoveDownload = downloadHost::remove,
-            )
-        }
         TrackContextSheet(
-            track = menuTrack,
+            track = menuTrack?.let { track ->
+                savedTracks[track.key]?.let { track.copy(bookmarked = it) } ?: track
+            },
             onDismiss = { menuTrack = null },
             onPlay = { track -> playbackHost.play(listOf(track.key), 0) },
             onPlayNext = playbackHost::playNext,
@@ -495,85 +464,48 @@ fun MainNavigation() {
                 },
             )
         }
+        }
+        if (playbackQueue.queue.isNotEmpty()) {
+            PlayerHost(
+                playbackHost = playbackHost,
+                miniRect = miniRect,
+                open = playerOpen,
+                onOpenChange = { playerOpen = it },
+                onOpenArtist = {
+                    playerOpen = false
+                    open(ArtistRoute(it))
+                },
+                onClearQueue = playbackHost::clearQueue,
+                onRemoveFromQueue = playbackHost::removeFromQueue,
+                downloadState = downloadState,
+                isOnline = isOnline,
+                onDownload = downloadHost::start,
+                onRemoveDownload = downloadHost::remove,
+            )
+        }
+    }
     }
 }
 
 @Composable
-private fun MiniPlayerHost(
-    playbackHost: PlaybackHostViewModel,
-    onOpen: () -> Unit,
-) {
-    val queueState by playbackHost.queueState.collectAsStateWithLifecycle()
-    if (queueState.queue.isEmpty()) return
-    val tracksByKey by playbackHost.queueTracks.collectAsStateWithLifecycle()
-    val isPlaying by playbackHost.isPlaying.collectAsStateWithLifecycle()
-    val isBuffering by playbackHost.isBuffering.collectAsStateWithLifecycle()
-
-    MiniPlayer(
-        queue = queueState.queue,
-        currentIndex = queueState.currentIndex,
-        tracksByKey = tracksByKey,
-        isPlaying = isPlaying,
-        isBuffering = isBuffering,
-        onOpen = onOpen,
-        onToggle = playbackHost::toggle,
-        onSelectIndex = playbackHost::playIndex,
-        onEnsureTracks = playbackHost::ensureQueueTracks,
-    )
-}
-
-@Composable
-private fun PlayerOverlay(
-    playbackHost: PlaybackHostViewModel,
-    onDismiss: () -> Unit,
-    onOpenQueue: () -> Unit,
-    onOpenArtist: (String) -> Unit,
-    downloadState: DownloadHostState,
-    isOnline: Boolean,
-    onDownload: (Track) -> Unit,
-    onRemoveDownload: (net.pipebomb.android.data.download.DownloadItem) -> Unit,
-) {
-    val track by playbackHost.currentTrack.collectAsStateWithLifecycle()
-    val playbackState by playbackHost.state.collectAsStateWithLifecycle()
-    val queueState by playbackHost.queueState.collectAsStateWithLifecycle()
-    val tracksByKey by playbackHost.queueTracks.collectAsStateWithLifecycle()
-    val saved by playbackHost.saved.collectAsStateWithLifecycle()
-
-    LaunchedEffect(track) {
-        if (track == null) onDismiss()
+private fun MiniPlayerSlot(onRectChanged: (Rect) -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .padding(
+                horizontal = PipeBombTheme.spacing.sm,
+                vertical = PipeBombTheme.spacing.xs,
+            ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { onRectChanged(it.boundsInWindow()) },
+        )
     }
-
-    val currentKey = queueState.queue.getOrNull(queueState.currentIndex)
-    val isSaved = tracksByKey[currentKey]?.bookmarked == true ||
-        (saved.trackKey == currentKey && saved.saved)
-    val downloadItem = currentKey?.let { downloadState.byTrack[it.toString()] }
-
-    NowPlayingSheet(
-        track = track,
-        state = playbackState,
-        queue = queueState.queue,
-        currentIndex = queueState.currentIndex,
-        tracksByKey = tracksByKey,
-        onEnsureTracks = playbackHost::ensureQueueTracks,
-        onSelectIndex = playbackHost::playIndex,
-        onToggle = playbackHost::toggle,
-        onNext = playbackHost::next,
-        onPrevious = playbackHost::previous,
-        onSeek = playbackHost::seekTo,
-        onShuffle = playbackHost::toggleShuffle,
-        onRepeat = playbackHost::cycleRepeat,
-        onOpenQueue = onOpenQueue,
-        onDismiss = onDismiss,
-        isOnline = isOnline,
-        isSaved = isSaved,
-        onToggleSave = playbackHost::toggleSaved,
-        downloadItem = downloadItem,
-        downloadsAvailable = downloadState.storageAvailable && isOnline,
-        onDownload = { track?.let(onDownload) },
-        onRemoveDownload = { downloadItem?.let(onRemoveDownload) },
-        onOpenArtist = onOpenArtist,
-    )
 }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TopBar(title: String, canGoBack: Boolean, onBack: () -> Unit) {
@@ -688,8 +620,6 @@ private fun PlaceholderScreen(title: String, subtitle: String) {
 private val topLevelRouteKeys = setOf("Home", "Search", "Library", "Settings")
 
 private fun isTopLevelRoute(key: String?): Boolean = key in topLevelRouteKeys
-
-private fun isQueueRoute(key: String?): Boolean = key == "Queue"
 
 private fun tabIndex(key: String?): Int = topLevelRouteKeys.indexOf(key)
 

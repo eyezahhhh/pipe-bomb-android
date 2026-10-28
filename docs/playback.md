@@ -88,8 +88,11 @@ Port the web behaviour from `../../website/src/store/player.store.ts`:
 - Previous restarts the track when position > 3s, otherwise goes to the previous track.
 - Persist queue, index, position, shuffle, repeat, and `originalQueue` on a throttle.
   Restore paused on launch; do not autoplay.
-- Queue, pager, and current-track metadata resolve local-first: downloaded row metadata is
-  applied immediately, then remote catalog metadata refreshes when online.
+- Every queue is projected into ExoPlayer as synthetic items, so the notification and
+  Android Auto see the same next/previous availability and queue as the phone UI.
+- Queue, pager, and current-track metadata resolve local-first: downloaded row metadata
+  is applied immediately, then remote catalog metadata refreshes the whole queue when
+  online. Remote metadata overwrites partial local rows.
 - Queue entries without local metadata do not show an indefinite `Loading…` offline;
   they show `Unavailable offline`.
 

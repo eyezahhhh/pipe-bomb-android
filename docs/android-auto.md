@@ -79,15 +79,17 @@ from resetting scroll position.
 
 ## Phone synchronization
 
-`PlaybackController` has an external queue mode for Auto:
+Every phone queue is projected into ExoPlayer as synthetic queue items, so the
+notification and Auto always see the same next/previous availability and queue as the
+phone UI.
 
-- `prepareExternalQueue(tracks, startIndex)` updates controller state and current
-  track.
-- ExoPlayer owns the Auto playlist; controller listens to `onMediaItemTransition`.
-- In external mode, phone next/previous/index-selection delegate to ExoPlayer so the
-  Auto queue survives.
-- Starting a new queue from the phone exits external mode and returns to the normal
-  single-item playback path.
+- `PlaybackController` builds the ExoPlayer playlist from the queue and uses
+  `onMediaItemTransition` as the source of truth for the current index.
+- `prepareExternalQueue(tracks, startIndex)` keeps the Auto-owned playlist path:
+  ExoPlayer owns the items returned by Auto, while the controller mirrors state.
+- Phone next/previous/index-selection delegate to the player playlist in both modes.
+- `onPlaybackResumption` returns the full queue for display and playback resumption;
+  it must never collapse Auto’s queue to a single synthetic item.
 
 V1 limitation: queue mutation actions while an Auto queue is active (add next, remove,
 reorder) are not projected back into the ExoPlayer Auto playlist. Treat Auto playback
@@ -95,11 +97,14 @@ as a read-only queue there until a follow-up.
 
 ## Playback controls
 
-The media session installs a custom button layout for Save/Saved, Shuffle off/on, and
-Repeat off/all/one. The buttons update from `PlaybackController.state` and
+The media session publishes media button preferences for Save/Saved, Shuffle off/on,
+and Repeat off/all/one. The buttons update from `PlaybackController.state` and
 `PlaybackSessionActions.saved`, and commands are handled by `onCustomCommand`.
-Android Auto may place these custom actions in the transport row or overflow depending
-on available space.
+
+Use explicit `setSlots` for these actions. Save is always placed in the overflow or
+forward-secondary slot so a missing Next command can never promote it into the
+transport row. Do not use the legacy `setCustomLayout` path: Media3 converts it by
+filling empty back/forward slots with the first custom buttons.
 
 ## Artwork
 

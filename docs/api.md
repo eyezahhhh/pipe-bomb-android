@@ -107,6 +107,10 @@ Server errors are `{ "error": "...", "message": "...", "statusCode": 401 }`.
 - 5xx: retry only idempotent requests; otherwise show a retry action.
 - Network/parse: show offline/retry state; never leak exception text to the user.
 
+Audio-session requests (`GET /tracks/.../audio`) use a 120s read timeout because
+server-side producer creation can queue behind slow plugin extraction. Normal API calls
+keep the 30s timeout. A session timeout is not a connectivity failure.
+
 ## Compatibility
 
 - `ignoreUnknownKeys = true`; optional fields are nullable in models.

@@ -33,6 +33,10 @@ class TrackCache @Inject constructor() {
         }
     }
 
+    fun remove(key: TrackKey) {
+        entries.remove(key.toString())
+    }
+
     fun clear() {
         entries.clear()
     }

@@ -5,7 +5,6 @@ import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaConstants
@@ -225,22 +224,6 @@ class AutoLibrarySessionCallback @Inject constructor(
         if (state.queue.isEmpty()) {
             return Futures.immediateFailedFuture(IllegalStateException("No queue to resume"))
         }
-        if (!isForPlayback) {
-            val track = playbackController.currentTrack.value
-            val item = track?.let {
-                AutoMediaItems.trackBrowse(it, AutoContext.History)
-            } ?: MediaItem.Builder()
-                .setMediaId(AutoIds.RECENT)
-                .setMediaMetadata(MediaMetadata.Builder().setTitle("Pipe Bomb").build())
-                .build()
-            return Futures.immediateFuture(
-                MediaSession.MediaItemsWithStartPosition(
-                    ImmutableList.of(item),
-                    0,
-                    state.positionMs,
-                ),
-            )
-        }
         val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
         scope.launch {
             runCatching {
@@ -250,8 +233,10 @@ class AutoLibrarySessionCallback @Inject constructor(
                     requestedIndex = state.currentIndex,
                     context = AutoContext.History,
                 ) ?: error("Unable to prepare resumption queue")
-                withContext(Dispatchers.Main) {
-                    playbackController.prepareExternalQueue(resolved.tracks, resolved.startIndex)
+                if (isForPlayback) {
+                    withContext(Dispatchers.Main) {
+                        playbackController.prepareExternalQueue(resolved.tracks, resolved.startIndex)
+                    }
                 }
                 MediaSession.MediaItemsWithStartPosition(
                     ImmutableList.copyOf(resolved.items),

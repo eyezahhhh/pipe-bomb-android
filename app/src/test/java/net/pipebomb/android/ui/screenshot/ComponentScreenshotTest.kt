@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -15,7 +17,7 @@ import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.data.download.DownloadEntity
 import net.pipebomb.android.data.download.DownloadItem
 import net.pipebomb.android.data.download.DownloadState
-import net.pipebomb.android.feature.player.NowPlayingSheet
+import net.pipebomb.android.feature.player.NowPlayingContent
 import net.pipebomb.android.test.TestFixtures
 import net.pipebomb.android.ui.catalog.DesignCatalog
 import net.pipebomb.android.ui.components.DownloadRow
@@ -193,7 +195,7 @@ class ComponentScreenshotTest {
         val tracks = TestFixtures.tracks()
         composeRule.setContent {
             PipeBombTheme {
-                NowPlayingSheet(
+                NowPlayingContent(
                     track = tracks[1],
                     state = TestFixtures.playback(),
                     queue = tracks.map { it.key },
@@ -207,8 +209,12 @@ class ComponentScreenshotTest {
                     onSeek = {},
                     onShuffle = {},
                     onRepeat = {},
-                    onOpenQueue = {},
                     onDismiss = {},
+                    onCollapseDrag = {},
+                    onCollapseDragEnd = {},
+                    collapseEnabled = false,
+                    onClearQueue = {},
+                    onRemoveFromQueue = {},
                 )
             }
         }
@@ -222,7 +228,7 @@ class ComponentScreenshotTest {
         val tracks = TestFixtures.tracks()
         composeRule.setContent {
             PipeBombTheme {
-                NowPlayingSheet(
+                NowPlayingContent(
                     track = tracks[1],
                     state = TestFixtures.playback(isBuffering = true),
                     queue = tracks.map { it.key },
@@ -236,13 +242,53 @@ class ComponentScreenshotTest {
                     onSeek = {},
                     onShuffle = {},
                     onRepeat = {},
-                    onOpenQueue = {},
                     onDismiss = {},
+                    onCollapseDrag = {},
+                    onCollapseDragEnd = {},
+                    collapseEnabled = false,
+                    onClearQueue = {},
+                    onRemoveFromQueue = {},
                 )
             }
         }
         composeRule.mainClock.advanceTimeBy(1_000)
         composeRule.waitForIdle()
         composeRule.onRoot().captureRoboImage("src/test/screenshots/now-playing-buffering.png")
+    }
+
+    @Test
+    fun playerQueueDrawer() {
+        val tracks = TestFixtures.tracks()
+        composeRule.setContent {
+            PipeBombTheme {
+                NowPlayingContent(
+                    track = tracks[1],
+                    state = TestFixtures.playback(),
+                    queue = tracks.map { it.key },
+                    currentIndex = 1,
+                    tracksByKey = tracks.associateBy { it.key },
+                    onEnsureTracks = {},
+                    onSelectIndex = {},
+                    onToggle = {},
+                    onNext = {},
+                    onPrevious = {},
+                    onSeek = {},
+                    onShuffle = {},
+                    onRepeat = {},
+                    onDismiss = {},
+                    onCollapseDrag = {},
+                    onCollapseDragEnd = {},
+                    collapseEnabled = false,
+                    onClearQueue = {},
+                    onRemoveFromQueue = {},
+                )
+            }
+        }
+        composeRule.mainClock.advanceTimeBy(1_000)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Queue").performClick()
+        composeRule.mainClock.advanceTimeBy(1_500)
+        composeRule.waitForIdle()
+        composeRule.onRoot().captureRoboImage("src/test/screenshots/player-queue.png")
     }
 }

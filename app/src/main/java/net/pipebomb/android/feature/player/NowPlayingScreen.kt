@@ -1,13 +1,12 @@
 package net.pipebomb.android.feature.player
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,24 +15,32 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.pipebomb.android.R
@@ -53,9 +60,8 @@ import net.pipebomb.android.ui.components.PipeBombProgressTrack
 import net.pipebomb.android.ui.components.ResourceImage
 import net.pipebomb.android.ui.playback.TrackPagerEffects
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NowPlayingSheet(
+fun NowPlayingContent(
     track: Track?,
     state: PlaybackUiState,
     queue: List<TrackKey>,
@@ -69,8 +75,12 @@ fun NowPlayingSheet(
     onSeek: (Long) -> Unit,
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
-    onOpenQueue: () -> Unit,
     onDismiss: () -> Unit,
+    onCollapseDrag: (Float) -> Unit,
+    onCollapseDragEnd: (Float) -> Unit,
+    collapseEnabled: Boolean,
+    onClearQueue: () -> Unit,
+    onRemoveFromQueue: (Int) -> Unit,
     isOnline: Boolean = true,
     isSaved: Boolean = false,
     onToggleSave: () -> Unit = {},
@@ -79,71 +89,126 @@ fun NowPlayingSheet(
     onDownload: () -> Unit = {},
     onRemoveDownload: () -> Unit = {},
     onOpenArtist: (String) -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
-    val colors = PipeBombTheme.colors
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    val pageCount = queue.size.coerceAtLeast(1)
-    val pagerState = rememberPagerState(
-        initialPage = currentIndex.coerceIn(0, pageCount - 1),
-        pageCount = { pageCount },
-    )
+    val motion = PipeBombTheme.motion
+    val verticalPagerState = rememberPagerState(pageCount = { 2 })
+    var collapseDragging by remember { mutableStateOf(false) }
+    val latestCollapseEnabled by rememberUpdatedState(collapseEnabled)
+    val latestOnCollapseDrag by rememberUpdatedState(onCollapseDrag)
+    val latestOnCollapseDragEnd by rememberUpdatedState(onCollapseDragEnd)
 
-    fun dismissThen(action: () -> Unit) {
-        scope.launch {
-            runCatching { sheetState.hide() }
-            if (!sheetState.isVisible) action()
+    val collapseConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                if (!latestCollapseEnabled || available.y <= 0f) return Offset.Zero
+                if (verticalPagerState.settledPage != 0) return Offset.Zero
+                collapseDragging = true
+                latestOnCollapseDrag(available.y)
+                return Offset(0f, available.y)
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (!latestCollapseEnabled || !collapseDragging || available.y <= 0f) {
+                    return Velocity.Zero
+                }
+                collapseDragging = false
+                latestOnCollapseDragEnd(available.y)
+                return Velocity(0f, available.y)
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (collapseDragging) {
+                    collapseDragging = false
+                    latestOnCollapseDragEnd(available.y)
+                }
+                return Velocity.Zero
+            }
         }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = colors.bgSurface,
-        contentColor = colors.fgPrimary,
-        scrimColor = colors.overlayScrim,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        dragHandle = null,
-        sheetGesturesEnabled = !pagerState.isScrollInProgress,
-        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+    BackHandler(enabled = collapseEnabled) {
+        if (verticalPagerState.currentPage == 1) {
+            scope.launch { verticalPagerState.animateScrollToPage(0) }
+        } else {
+            onDismiss()
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .nestedScroll(collapseConnection),
     ) {
-        NowPlayingContent(
-            track = track,
-            state = state,
-            queue = queue,
-            currentIndex = currentIndex,
-            pagerState = pagerState,
-            tracksByKey = tracksByKey,
-            onEnsureTracks = onEnsureTracks,
-            onSelectIndex = onSelectIndex,
-            onToggle = onToggle,
-            onNext = onNext,
-            onPrevious = onPrevious,
-            onSeek = onSeek,
-            onShuffle = onShuffle,
-            onRepeat = onRepeat,
-            onClose = { dismissThen(onDismiss) },
-            onOpenQueue = { dismissThen(onOpenQueue) },
-            isOnline = isOnline,
-            isSaved = isSaved,
-            onToggleSave = onToggleSave,
-            downloadItem = downloadItem,
-            downloadsAvailable = downloadsAvailable,
-            onDownload = onDownload,
-            onRemoveDownload = onRemoveDownload,
-            onOpenArtist = { artistId -> dismissThen { onOpenArtist(artistId) } },
-        )
+        VerticalPager(
+            state = verticalPagerState,
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("player-drawer"),
+            flingBehavior = PagerDefaults.flingBehavior(
+                state = verticalPagerState,
+                pagerSnapDistance = PagerSnapDistance.atMost(1),
+                snapAnimationSpec = motion.sheetSpring,
+            ),
+        ) { page ->
+            when (page) {
+                0 -> NowPlayingPage(
+                    track = track,
+                    state = state,
+                    queue = queue,
+                    currentIndex = currentIndex,
+                    tracksByKey = tracksByKey,
+                    onEnsureTracks = onEnsureTracks,
+                    onSelectIndex = onSelectIndex,
+                    onToggle = onToggle,
+                    onNext = onNext,
+                    onPrevious = onPrevious,
+                    onSeek = onSeek,
+                    onShuffle = onShuffle,
+                    onRepeat = onRepeat,
+                    onClose = onDismiss,
+                    onOpenQueue = {
+                        scope.launch { verticalPagerState.animateScrollToPage(1) }
+                    },
+                    isOnline = isOnline,
+                    isSaved = isSaved,
+                    onToggleSave = onToggleSave,
+                    downloadItem = downloadItem,
+                    downloadsAvailable = downloadsAvailable,
+                    onDownload = onDownload,
+                    onRemoveDownload = onRemoveDownload,
+                    onOpenArtist = onOpenArtist,
+                )
+
+                else -> QueueDrawer(
+                    state = state,
+                    queue = queue,
+                    tracksByKey = tracksByKey,
+                    isOnline = isOnline,
+                    onEnsureTracks = onEnsureTracks,
+                    onSelectIndex = onSelectIndex,
+                    onClearQueue = onClearQueue,
+                    onRemoveFromQueue = onRemoveFromQueue,
+                    onBack = {
+                        scope.launch { verticalPagerState.animateScrollToPage(0) }
+                    },
+                )
+            }
+        }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NowPlayingContent(
+private fun NowPlayingPage(
     track: Track?,
     state: PlaybackUiState,
     queue: List<TrackKey>,
     currentIndex: Int,
-    pagerState: androidx.compose.foundation.pager.PagerState,
     tracksByKey: Map<TrackKey, Track>,
     onEnsureTracks: (Iterable<Int>) -> Unit,
     onSelectIndex: (Int) -> Unit,
@@ -165,6 +230,11 @@ private fun NowPlayingContent(
     onOpenArtist: (String) -> Unit,
 ) {
     val colors = PipeBombTheme.colors
+    val pageCount = queue.size.coerceAtLeast(1)
+    val pagerState = rememberPagerState(
+        initialPage = currentIndex.coerceIn(0, pageCount - 1),
+        pageCount = { pageCount },
+    )
     TrackPagerEffects(
         pagerState = pagerState,
         currentIndex = currentIndex,

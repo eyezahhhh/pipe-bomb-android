@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaBrowser
 import androidx.media3.session.SessionCommand
@@ -41,13 +42,31 @@ class AutoBrowseTest {
             while (System.currentTimeMillis() < deadline) {
                 val ref = AtomicReference<List<String>>(emptyList())
                 instrumentation.runOnMainSync {
-                    ref.set(browser.customLayout.mapNotNull { it.sessionCommand?.customAction })
+                    ref.set(browser.mediaButtonPreferences.mapNotNull { it.sessionCommand?.customAction })
                 }
                 actions = ref.get()
                 if (actions.containsAll(EXPECTED_ACTIONS)) break
                 Thread.sleep(50)
             }
             assertTrue("Missing custom actions: $actions", actions.containsAll(EXPECTED_ACTIONS))
+            val saveRef = AtomicReference<CommandButton?>(null)
+            instrumentation.runOnMainSync {
+                saveRef.set(
+                    browser.mediaButtonPreferences.firstOrNull {
+                        it.sessionCommand?.customAction ==
+                            net.pipebomb.android.playback.PlaybackSessionActions.COMMAND_SAVE
+                    },
+                )
+            }
+            val saveButton = saveRef.get()
+            assertTrue("Save button is missing", saveButton != null)
+            assertTrue(
+                "Save must not occupy the previous/next slots",
+                (0 until saveButton!!.slots.length()).none { index ->
+                    val slot = saveButton.slots.get(index)
+                    slot == CommandButton.SLOT_BACK || slot == CommandButton.SLOT_FORWARD
+                },
+            )
             for (command in EXPECTED_ACTIONS) {
                 val resultFuture = AtomicReference<ListenableFuture<SessionResult>>()
                 instrumentation.runOnMainSync {

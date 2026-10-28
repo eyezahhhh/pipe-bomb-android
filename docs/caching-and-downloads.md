@@ -17,6 +17,7 @@ storage settings. Playback/session/queue behaviour lives in `playback.md`.
   cache opens.
 - Streamed audio has a 512 MB unpinned LRU budget. Downloads are pinned and are not
   evicted by that budget.
+- Track rows show an accent check icon for completed downloads.
 - Downloads pause when free space reaches the user-selected reserve. The reserve is
   stored in Preferences DataStore and can be Off, a preset, or a custom MB value.
 - Downloads default to Wi-Fi only. The Settings toggle can allow downloads on metered

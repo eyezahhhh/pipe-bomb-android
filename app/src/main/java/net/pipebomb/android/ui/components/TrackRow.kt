@@ -13,17 +13,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import net.pipebomb.android.R
 import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.EphemeralTrack
 import net.pipebomb.android.core.model.Track
+
+val LocalDownloadedTrackKeys = compositionLocalOf<Set<String>> { emptySet() }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -39,6 +46,7 @@ fun TrackRow(
     trackNumber: Int? = null,
 ) {
     TrackRowContent(
+        trackKey = track.key.toString(),
         title = DisplayText.title(track),
         artist = DisplayText.artists(track),
         artwork = DisplayText.artwork(track),
@@ -68,6 +76,7 @@ fun EphemeralTrackRow(
     trackNumber: Int? = null,
 ) {
     TrackRowContent(
+        trackKey = track.key.toString(),
         title = DisplayText.title(track),
         artist = DisplayText.artists(track),
         artwork = DisplayText.artwork(track),
@@ -86,6 +95,7 @@ fun EphemeralTrackRow(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrackRowContent(
+    trackKey: String,
     title: String,
     artist: String,
     artwork: net.pipebomb.android.core.model.Resource?,
@@ -156,6 +166,14 @@ private fun TrackRowContent(
                     )
                 }
             }
+        }
+        if (LocalDownloadedTrackKeys.current.contains(trackKey)) {
+            Icon(
+                imageVector = ImageVector.vectorResource(R.drawable.ic_tabler_check_filled),
+                contentDescription = "Downloaded",
+                tint = colors.accentPrimary,
+                modifier = Modifier.size(16.dp),
+            )
         }
     }
 }
