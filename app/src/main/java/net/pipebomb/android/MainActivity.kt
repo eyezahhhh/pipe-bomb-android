@@ -11,6 +11,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import net.pipebomb.android.core.design.theme.PipeBombTheme
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.ui.PipeBombApp
 
 @AndroidEntryPoint
@@ -34,5 +36,15 @@ class MainActivity : ComponentActivity() {
                 PipeBombApp()
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        AppLog.info(category = LogCategory.APP, event = "app.foreground")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        AppLog.info(category = LogCategory.APP, event = "app.background")
     }
 }

@@ -8,6 +8,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -21,7 +23,11 @@ class ConnectivityMonitor @Inject constructor(
     private val _isMetered = MutableStateFlow(currentlyMetered())
     override val isMetered: StateFlow<Boolean> = _isMetered.asStateFlow()
 
+    @Volatile
+    private var lastSignature: String? = null
+
     init {
+        lastSignature = signatureOf(currentlyOnline(), currentlyMetered(), activeCapabilities())
         manager.registerDefaultNetworkCallback(
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
@@ -43,8 +49,64 @@ class ConnectivityMonitor @Inject constructor(
     }
 
     private fun refresh() {
-        _isOnline.value = currentlyOnline()
-        _isMetered.value = currentlyMetered()
+        val capabilities = activeCapabilities()
+        val online = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val metered = capabilities?.hasCapability(
+            NetworkCapabilities.NET_CAPABILITY_INTERNET,
+        ) == true && capabilities?.hasCapability(
+            NetworkCapabilities.NET_CAPABILITY_NOT_METERED,
+        ) != true
+        val signature = signatureOf(online, metered, capabilities)
+        if (signature != lastSignature) {
+            lastSignature = signature
+            val validated = capabilities?.hasCapability(
+                NetworkCapabilities.NET_CAPABILITY_VALIDATED,
+            ) == true
+            AppLog.info(
+                category = LogCategory.NETWORK,
+                event = "net.connectivity",
+                fields = mapOf(
+                    "online" to online,
+                    "metered" to metered,
+                    "transports" to transportsOf(capabilities).joinToString("+"),
+                    "validated" to validated,
+                    "downstreamKbps" to (capabilities?.linkDownstreamBandwidthKbps ?: 0),
+                    "upstreamKbps" to (capabilities?.linkUpstreamBandwidthKbps ?: 0),
+                ),
+            )
+        }
+        _isOnline.value = online
+        _isMetered.value = metered
+    }
+
+    private fun signatureOf(
+        online: Boolean,
+        metered: Boolean,
+        capabilities: NetworkCapabilities?,
+    ): String = buildString {
+        append(online)
+        append('|')
+        append(metered)
+        append('|')
+        append(transportsOf(capabilities).joinToString("+"))
+        append('|')
+        append(capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true)
+        append('|')
+        append(capabilities?.linkDownstreamBandwidthKbps ?: 0)
+        append('|')
+        append(capabilities?.linkUpstreamBandwidthKbps ?: 0)
+    }
+
+    private fun transportsOf(capabilities: NetworkCapabilities?): List<String> {
+        if (capabilities == null) return emptyList()
+        return buildList {
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) add("wifi")
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) add("cellular")
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) add("ethernet")
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH)) add("bluetooth")
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) add("vpn")
+            if (isEmpty()) add("other")
+        }
     }
 
     private fun currentlyOnline(): Boolean =

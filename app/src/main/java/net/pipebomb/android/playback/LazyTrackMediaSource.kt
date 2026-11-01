@@ -25,7 +25,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
+import net.pipebomb.android.core.logging.LogRedaction
 import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.core.net.kindLabel
 import net.pipebomb.android.core.net.userMessage
 import java.io.IOException
 
@@ -103,6 +107,15 @@ private class LazyTrackMediaSource(
                 if (released) return@post
                 when (result) {
                     is net.pipebomb.android.core.net.ApiResult.Failure -> {
+                        AppLog.error(
+                            category = LogCategory.PLAYBACK,
+                            event = "media.source.failed",
+                            message = result.error.userMessage(),
+                            fields = mapOf(
+                                "track" to key.toString(),
+                                "kind" to result.error.kindLabel(),
+                            ),
+                        )
                         resolutionError = IOException(result.error.userMessage())
                         refreshSourceInfo(
                             SinglePeriodTimeline(C.TIME_UNSET, false, false, false, null, mediaItem),
@@ -110,6 +123,15 @@ private class LazyTrackMediaSource(
                     }
 
                     is net.pipebomb.android.core.net.ApiResult.Success -> {
+                        AppLog.debug(
+                            category = LogCategory.PLAYBACK,
+                            event = "media.source.prepared",
+                            fields = mapOf(
+                                "track" to key.toString(),
+                                "mediaType" to result.value.type.name.lowercase(),
+                                "sessionHash" to LogRedaction.sessionId(result.value.sessionId),
+                            ),
+                        )
                         val resolvedItem = TrackMediaItemFactory.withResolvedSource(mediaItem, result.value)
                         val source = childFactory.createMediaSource(resolvedItem)
                         childSource = source

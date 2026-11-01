@@ -26,6 +26,7 @@ live in `architecture.md`.
 | Last authenticated user | Small synchronous bootstrap SharedPreferences for offline launch |
 | Streamed audio | Media3 `SimpleCache` in the selected app-specific directory |
 | Downloads | Same `SimpleCache` + Room download metadata and Media3 download index |
+| Diagnostics | JSONL files in app-private `filesDir/diagnostics/logs` (16 MB, 14 days) |
 
 The storage pointer is synchronous because `SimpleCache` must choose its directory
 before asynchronous DataStore collection can start. All other settings remain in
@@ -58,6 +59,22 @@ location deletes all downloads and cached audio and restarts the process.
 - Manifest: `INTERNET`, `POST_NOTIFICATIONS` (runtime on Android 13+),
   `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`,
   `FOREGROUND_SERVICE_DATA_SYNC`.
+
+## Diagnostics
+
+- `AppLog` delegates to `FileAppLogger`, which writes JSONL in every build. The default
+  level is Verbose; Settings can switch to Normal or Off.
+- Records cover app lifecycle, HTTP (method/path/status/timing/redacted error body),
+  auth, connectivity, playback (resolve, state, focus loss, stall, errors), Media3
+  internals, cache eviction, downloads, storage, and Android Auto browse/queue.
+- Uncaught exceptions are written as `FATAL`; `ApplicationExitInfo` records crashes,
+  ANRs, low-memory kills and trace snippets on the next launch.
+- Settings → Diagnostics exports a zip to a user-chosen Downloads location (SAF):
+  `logs/*.log`, `summary.txt` (newest 200 warnings/errors), `state.json`, `README.txt`.
+- Logs are excluded from auto-backup and device transfer. Never log cookies, auth
+  headers, request bodies, URL queries or userinfo; mask sensitive JSON values.
+- The logger never blocks the caller. It uses a bounded channel, flushes each record,
+  syncs on errors, and rotates without touching playback or UI threads.
 
 ## Navigation
 

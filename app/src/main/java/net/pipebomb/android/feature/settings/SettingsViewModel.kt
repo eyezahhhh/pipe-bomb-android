@@ -1,8 +1,10 @@
 package net.pipebomb.android.feature.settings
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +15,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.pipebomb.android.BuildConfig
 import net.pipebomb.android.core.datastore.AppSettingsStore
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.DiagnosticsLevel
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.net.DataStoreServerUrlProvider
 import net.pipebomb.android.data.AuthRepository
 import net.pipebomb.android.data.SessionState
@@ -44,6 +49,10 @@ data class SettingsUiState(
     val reservePaused: Boolean = false,
     val allowMobileDataDownloads: Boolean = false,
     val mobileDataPaused: Boolean = false,
+    val diagnosticsLevel: DiagnosticsLevel = DiagnosticsLevel.Default,
+    val logBytes: Long = 0,
+    val logOldestMs: Long? = null,
+    val exportStatus: String? = null,
 )
 
 @HiltViewModel
@@ -59,6 +68,7 @@ class SettingsViewModel @Inject constructor(
     private val scheduler: DownloadScheduler,
     private val collectionSync: CollectionSyncScheduler,
     private val restarter: AppRestarter,
+    private val diagnostics: DiagnosticsExporter,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
@@ -107,6 +117,11 @@ class SettingsViewModel @Inject constructor(
                 _state.update { it.copy(mobileDataPaused = paused) }
             }
         }
+        viewModelScope.launch {
+            settings.diagnosticsLevel.collect { level ->
+                _state.update { it.copy(diagnosticsLevel = level) }
+            }
+        }
     }
 
     fun refresh() {
@@ -135,7 +150,69 @@ class SettingsViewModel @Inject constructor(
                     appVersion = BuildConfig.VERSION_NAME,
                 )
             }
+            refreshDiagnostics()
         }
+    }
+
+    private fun refreshDiagnostics() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val bytes = diagnostics.totalBytes()
+            val oldest = diagnostics.oldestTimestamp()
+            _state.update {
+                it.copy(logBytes = bytes, logOldestMs = oldest)
+            }
+        }
+    }
+
+    fun setDiagnosticsLevel(level: DiagnosticsLevel) {
+        viewModelScope.launch {
+            settings.setDiagnosticsLevel(level)
+            AppLog.setLevel(level)
+            AppLog.info(
+                category = LogCategory.SETTINGS,
+                event = "settings.change",
+                fields = mapOf(
+                    "key" to "diagnostics_level",
+                    "value" to level.storageValue,
+                ),
+            )
+        }
+    }
+
+    fun exportDiagnostics(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val result = diagnostics.export(uri)
+                _state.update {
+                    it.copy(exportStatus = "Exported ${result.recordCount} records.")
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLog.error(
+                    category = LogCategory.DIAGNOSTICS,
+                    event = "diagnostics.export.failed",
+                    message = error.message,
+                    fields = mapOf("exception" to error.javaClass.simpleName),
+                )
+                _state.update {
+                    it.copy(exportStatus = "Export failed: ${error.message}")
+                }
+            }
+            refreshDiagnostics()
+        }
+    }
+
+    fun clearDiagnostics() {
+        viewModelScope.launch {
+            diagnostics.clear()
+            _state.update { it.copy(exportStatus = "Logs cleared.") }
+            refreshDiagnostics()
+        }
+    }
+
+    fun dismissExportStatus() {
+        _state.update { it.copy(exportStatus = null) }
     }
 
     fun clearCache() {
@@ -160,6 +237,11 @@ class SettingsViewModel @Inject constructor(
     fun setReserveBytes(bytes: Long) {
         viewModelScope.launch {
             settings.setDownloadReserveBytes(bytes)
+            AppLog.info(
+                category = LogCategory.SETTINGS,
+                event = "settings.change",
+                fields = mapOf("key" to "download_reserve_bytes", "value" to bytes),
+            )
             coordinator.resume()
             if (!coordinator.reservePaused.value && !coordinator.mobileDataPaused.value) {
                 scheduler.schedule()
@@ -171,6 +253,11 @@ class SettingsViewModel @Inject constructor(
     fun setAllowMobileDataDownloads(allow: Boolean) {
         viewModelScope.launch {
             settings.setAllowMobileDataDownloads(allow)
+            AppLog.info(
+                category = LogCategory.SETTINGS,
+                event = "settings.change",
+                fields = mapOf("key" to "allow_mobile_data_downloads", "value" to allow),
+            )
             coordinator.refreshAvailability()
             scheduler.reschedule()
             refresh()
@@ -190,6 +277,11 @@ class SettingsViewModel @Inject constructor(
     fun switchStorage(location: StorageLocation) {
         viewModelScope.launch(Dispatchers.IO) {
             if (!storage.requestSwitch(location)) return@launch
+            AppLog.info(
+                category = LogCategory.APP,
+                event = "app.restart.requested",
+                fields = mapOf("reason" to "storage_switch", "target" to location.id),
+            )
             scheduler.cancel()
             collectionSync.cancel()
             runCatching { coordinator.pauseAll() }
@@ -201,6 +293,11 @@ class SettingsViewModel @Inject constructor(
 
     fun restartApp() {
         viewModelScope.launch(Dispatchers.IO) {
+            AppLog.info(
+                category = LogCategory.APP,
+                event = "app.restart.requested",
+                fields = mapOf("reason" to "manual"),
+            )
             scheduler.cancel()
             collectionSync.cancel()
             runCatching { coordinator.pauseAll() }
@@ -224,8 +321,13 @@ class SettingsViewModel @Inject constructor(
             downloads.deleteAll()
             withContext(Dispatchers.Main) { playbackController.clearQueue() }
             playbackCache.clearStreamed()
-            authRepository.clearSession()
+            authRepository.clearSession("server_change")
             serverUrlProvider.clear()
+            AppLog.info(
+                category = LogCategory.SETTINGS,
+                event = "settings.change",
+                fields = mapOf("key" to "server", "value" to "cleared"),
+            )
             refresh()
         }
     }

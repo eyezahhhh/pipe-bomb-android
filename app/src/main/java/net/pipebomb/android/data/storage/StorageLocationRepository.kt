@@ -9,6 +9,8 @@ import android.os.StatFs
 import android.os.storage.StorageManager
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,8 +26,16 @@ class StorageLocationRepository @Inject constructor(
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val _revision = MutableStateFlow(0L)
     val revision: StateFlow<Long> = _revision.asStateFlow()
+    @Volatile
+    private var lastFallback: Boolean? = null
+
     private val volumeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            AppLog.debug(
+                category = LogCategory.STORAGE,
+                event = "storage.volume",
+                fields = mapOf("action" to intent?.action),
+            )
             _revision.update { it + 1 }
         }
     }
@@ -90,6 +100,27 @@ class StorageLocationRepository @Inject constructor(
             ?: "Internal storage"
 
     fun resolve(): ResolvedStorage {
+        val resolved = resolveStorage()
+        if (resolved.isFallback != lastFallback) {
+            lastFallback = resolved.isFallback
+            if (resolved.isFallback) {
+                AppLog.warn(
+                    category = LogCategory.STORAGE,
+                    event = "storage.fallback",
+                    fields = mapOf("selectedId" to resolved.selectedId),
+                )
+            } else {
+                AppLog.info(
+                    category = LogCategory.STORAGE,
+                    event = "storage.available",
+                    fields = mapOf("selectedId" to resolved.selectedId),
+                )
+            }
+        }
+        return resolved
+    }
+
+    private fun resolveStorage(): ResolvedStorage {
         val selectedId = selectedLocationId()
         if (selectedId == INTERNAL_ID) {
             val location = internalLocation()
@@ -120,6 +151,14 @@ class StorageLocationRepository @Inject constructor(
     fun requestSwitch(location: StorageLocation): Boolean {
         val current = resolve()
         if (location.id == current.selectedId && current.location != null) return false
+        AppLog.info(
+            category = LogCategory.STORAGE,
+            event = "storage.switch.requested",
+            fields = mapOf(
+                "from" to current.selectedId,
+                "to" to location.id,
+            ),
+        )
         prefs.edit()
             .putString(KEY_PENDING_LOCATION, location.id)
             .putString(KEY_PENDING_LABEL, location.label)
@@ -150,11 +189,24 @@ class StorageLocationRepository @Inject constructor(
             .remove(KEY_PENDING_LABEL)
             .remove(KEY_PENDING_DELETE)
             .commit()
+        AppLog.info(
+            category = LogCategory.STORAGE,
+            event = "storage.switch.applied",
+            fields = mapOf("selectedId" to target, "label" to label),
+        )
     }
 
     private fun deleteCacheDirectory(dir: File) {
         if (!isAppOwnedPath(dir)) return
         runCatching { dir.deleteRecursively() }
+            .onFailure { error ->
+                AppLog.warn(
+                    category = LogCategory.STORAGE,
+                    event = "storage.delete.failed",
+                    message = error.message,
+                    fields = mapOf("exception" to error.javaClass.simpleName),
+                )
+            }
     }
 
     private fun isAppOwnedPath(dir: File): Boolean {

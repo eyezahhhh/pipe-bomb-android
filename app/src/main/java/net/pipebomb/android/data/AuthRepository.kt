@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.model.LoginDto
 import net.pipebomb.android.core.model.User
 import net.pipebomb.android.core.net.ApiClientFactory
@@ -15,6 +17,7 @@ import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.core.net.PersistentCookieJar
 import net.pipebomb.android.core.net.PipeBombJson
 import net.pipebomb.android.core.net.apiCall
+import net.pipebomb.android.core.net.kindLabel
 import net.pipebomb.android.di.ApplicationScope
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -52,18 +55,33 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun refresh(): ApiResult<User> {
-        val result = apiCall { apiClientFactory.requireApi().getSelf() }
+        val result = apiCall("auth.getSelf") { apiClientFactory.requireApi().getSelf() }
         when (result) {
             is ApiResult.Success -> {
                 _lastError.value = null
                 cacheUser(result.value)
                 _session.value = SessionState.Authenticated(result.value)
+                AppLog.info(
+                    category = LogCategory.AUTH,
+                    event = "auth.refresh",
+                    fields = mapOf("userId" to result.value.uuid),
+                )
             }
 
             is ApiResult.Failure -> {
                 _lastError.value = result.error
                 val user = cachedUser
-                if (result.error is ApiError.Network && user != null) {
+                val fellBack = result.error is ApiError.Network && user != null
+                AppLog.warn(
+                    category = LogCategory.AUTH,
+                    event = "auth.refresh",
+                    message = result.error.message,
+                    fields = mapOf(
+                        "kind" to result.error.kindLabel(),
+                        "fellBackToCachedUser" to fellBack,
+                    ),
+                )
+                if (fellBack) {
                     _session.value = SessionState.Authenticated(user)
                 } else {
                     clearCachedUser()
@@ -75,40 +93,67 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun login(username: String, password: String): ApiResult<User> {
-        return authenticate {
+        return authenticate("auth.login") {
             apiClientFactory.requireApi().login(LoginDto(username.trim(), password))
         }
     }
 
     suspend fun signup(username: String, password: String): ApiResult<User> {
-        return authenticate {
+        return authenticate("auth.signup") {
             apiClientFactory.requireApi().signup(LoginDto(username.trim(), password))
         }
     }
 
     suspend fun logout() {
         runCatching { apiClientFactory.requireApi().logout() }
-        clearSession()
+            .onFailure { error ->
+                AppLog.warn(
+                    category = LogCategory.AUTH,
+                    event = "auth.logout",
+                    message = error.message,
+                    fields = mapOf("exception" to error.javaClass.simpleName),
+                )
+            }
+        clearSession("logout")
     }
 
-    fun clearSession() {
+    fun clearSession(reason: String = "explicit") {
         cookieJar.clear()
         clearCachedUser()
         _session.value = SessionState.Unauthenticated
         _lastError.value = null
+        AppLog.info(
+            category = LogCategory.AUTH,
+            event = "auth.session.cleared",
+            fields = mapOf("reason" to reason),
+        )
     }
 
-    private suspend fun authenticate(block: suspend () -> User): ApiResult<User> {
-        val result = apiCall(block)
+    private suspend fun authenticate(
+        label: String,
+        block: suspend () -> User,
+    ): ApiResult<User> {
+        val result = apiCall(label, block)
         when (result) {
             is ApiResult.Success -> {
                 _lastError.value = null
                 cacheUser(result.value)
                 _session.value = SessionState.Authenticated(result.value)
+                AppLog.info(
+                    category = LogCategory.AUTH,
+                    event = label,
+                    fields = mapOf("userId" to result.value.uuid),
+                )
             }
 
             is ApiResult.Failure -> {
                 _lastError.value = result.error
+                AppLog.warn(
+                    category = LogCategory.AUTH,
+                    event = label,
+                    message = result.error.message,
+                    fields = mapOf("kind" to result.error.kindLabel()),
+                )
             }
         }
         return result

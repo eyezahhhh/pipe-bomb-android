@@ -3,12 +3,16 @@ package net.pipebomb.android.playback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
+import net.pipebomb.android.core.logging.LogRedaction
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.net.ApiClientFactory
 import net.pipebomb.android.core.net.ApiError
 import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.core.net.ServerUrlProvider
 import net.pipebomb.android.core.net.apiCall
+import net.pipebomb.android.core.net.kindLabel
 import net.pipebomb.android.core.net.rewriteServerUrl
 import net.pipebomb.android.data.download.DownloadRepository
 import net.pipebomb.android.data.storage.StorageLocationRepository
@@ -44,13 +48,30 @@ class PlaybackResolver @Inject constructor(
     private val inFlight = ConcurrentHashMap<String, Deferred<ApiResult<ResolvedMedia>>>()
 
     suspend fun resolve(key: TrackKey, forceRefresh: Boolean = false): ApiResult<ResolvedMedia> {
+        val startedNs = System.nanoTime()
         downloadRepository.completed(key)?.let { download ->
             if (!storage.resolve().downloadsEnabled) {
+                AppLog.warn(
+                    category = LogCategory.PLAYBACK,
+                    event = "playback.resolve.download_unavailable",
+                    fields = mapOf("track" to key.toString()),
+                )
                 return ApiResult.Failure(
                     ApiError.Local("Downloaded audio is on unavailable storage. Reconnect it or change the storage location."),
                 )
             }
             sessionKeyRegistry.register(download.sessionId, key)
+            AppLog.info(
+                category = LogCategory.PLAYBACK,
+                event = "playback.resolve",
+                fields = mapOf(
+                    "track" to key.toString(),
+                    "source" to "download",
+                    "mediaType" to "stream",
+                    "sessionHash" to LogRedaction.sessionId(download.sessionId),
+                    "durMs" to elapsedMs(startedNs),
+                ),
+            )
             return ApiResult.Success(
                 ResolvedMedia(
                     trackKey = key,
@@ -68,7 +89,21 @@ class PlaybackResolver @Inject constructor(
 
         val id = key.toString()
         if (!forceRefresh) {
-            sessions[id]?.takeIf { isFresh(it) }?.let { return ApiResult.Success(it) }
+            sessions[id]?.takeIf { isFresh(it) }?.let { cached ->
+                AppLog.debug(
+                    category = LogCategory.PLAYBACK,
+                    event = "playback.resolve",
+                    fields = mapOf(
+                        "track" to key.toString(),
+                        "source" to "session",
+                        "mediaType" to cached.type.name.lowercase(),
+                        "sessionHash" to LogRedaction.sessionId(cached.sessionId),
+                        "cacheHit" to true,
+                        "durMs" to elapsedMs(startedNs),
+                    ),
+                )
+                return ApiResult.Success(cached)
+            }
         } else {
             sessions.remove(id)
         }
@@ -77,7 +112,33 @@ class PlaybackResolver @Inject constructor(
         }
         return try {
             val result = request.await()
-            if (result is ApiResult.Success) sessions[id] = result.value
+            if (result is ApiResult.Success) {
+                sessions[id] = result.value
+                AppLog.info(
+                    category = LogCategory.PLAYBACK,
+                    event = "playback.resolve",
+                    fields = mapOf(
+                        "track" to key.toString(),
+                        "source" to "session",
+                        "mediaType" to result.value.type.name.lowercase(),
+                        "sessionHash" to LogRedaction.sessionId(result.value.sessionId),
+                        "cacheHit" to false,
+                        "durMs" to elapsedMs(startedNs),
+                    ),
+                )
+            } else if (result is ApiResult.Failure) {
+                AppLog.warn(
+                    category = LogCategory.PLAYBACK,
+                    event = "playback.resolve",
+                    message = result.error.message,
+                    fields = mapOf(
+                        "track" to key.toString(),
+                        "kind" to result.error.kindLabel(),
+                        "forceRefresh" to forceRefresh,
+                        "durMs" to elapsedMs(startedNs),
+                    ),
+                )
+            }
             result
         } finally {
             inFlight.remove(id, request)
@@ -86,16 +147,27 @@ class PlaybackResolver @Inject constructor(
 
     fun invalidate(key: TrackKey) {
         sessions.remove(key.toString())
+        AppLog.debug(
+            category = LogCategory.PLAYBACK,
+            event = "playback.resolve.invalidate",
+            fields = mapOf("track" to key.toString()),
+        )
     }
 
     fun clear() {
+        val count = sessions.size
         sessions.clear()
+        AppLog.info(
+            category = LogCategory.PLAYBACK,
+            event = "playback.resolve.clear",
+            fields = mapOf("count" to count),
+        )
     }
 
     fun noServer(): ApiError = ApiError.Network("No server configured")
 
     private suspend fun createSession(key: TrackKey): ApiResult<ResolvedMedia> {
-        val result = apiCall {
+        val result = apiCall("audio.session") {
             apiClientFactory.requireApi().createAudioSession(
                 key.pluginId,
                 key.libraryId,
@@ -132,6 +204,9 @@ class PlaybackResolver @Inject constructor(
 
     private fun isFresh(media: ResolvedMedia): Boolean =
         System.currentTimeMillis() - media.resolvedAt < SESSION_TTL_MS
+
+    private fun elapsedMs(startedNs: Long): Long =
+        (System.nanoTime() - startedNs) / 1_000_000
 
     private companion object {
         const val SESSION_TTL_MS = 10 * 60 * 1000L

@@ -85,7 +85,7 @@ class AuthViewModel @Inject constructor(
 
     fun changeServer() {
         viewModelScope.launch {
-            authRepository.clearSession()
+            authRepository.clearSession("server_change")
             serverUrlProvider.clear()
         }
     }

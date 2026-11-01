@@ -2,10 +2,13 @@ package net.pipebomb.android.playback.download
 
 import kotlinx.coroutines.flow.first
 import net.pipebomb.android.core.datastore.AppSettingsStore
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.core.net.ConnectivityStatus
+import net.pipebomb.android.core.net.kindLabel
 import net.pipebomb.android.core.net.userMessage
 import net.pipebomb.android.data.AuthRepository
 import net.pipebomb.android.data.SessionState
@@ -52,6 +55,14 @@ class DownloadStarter @Inject constructor(
                 DownloadState.Pending.name,
             )
         ) {
+            AppLog.debug(
+                category = LogCategory.DOWNLOAD,
+                event = "download.enqueue.skipped",
+                fields = mapOf(
+                    "track" to track.key.toString(),
+                    "state" to existing?.state,
+                ),
+            )
             return DownloadStartResult.AlreadyPresent
         }
         if (existing?.state == DownloadState.Unsupported.name) {
@@ -76,6 +87,16 @@ class DownloadStarter @Inject constructor(
             accountName = user?.user?.username,
         )
         scheduler.schedule()
+        AppLog.info(
+            category = LogCategory.DOWNLOAD,
+            event = "download.collection.subscribe",
+            fields = mapOf(
+                "type" to draft.type.name,
+                "queued" to result.queued,
+                "skipped" to result.skipped,
+                "tracks" to tracks.size,
+            ),
+        )
         return CollectionStartResult.Started(result.queued, result.skipped)
     }
 
@@ -91,15 +112,38 @@ class DownloadStarter @Inject constructor(
 
     private suspend fun preflightError(): DownloadStartResult.Error? {
         if (!connectivity.isOnline.value) {
+            AppLog.warn(
+                category = LogCategory.DOWNLOAD,
+                event = "download.preflight.failed",
+                fields = mapOf("reason" to "offline"),
+            )
             return DownloadStartResult.Error("Connect to download music")
         }
         if (!storage.resolve().downloadsEnabled || cache.storageState.isFallback) {
+            AppLog.warn(
+                category = LogCategory.DOWNLOAD,
+                event = "download.preflight.failed",
+                fields = mapOf(
+                    "reason" to "storage",
+                    "fallback" to cache.storageState.isFallback,
+                ),
+            )
             return DownloadStartResult.Error(
                 "The selected storage is unavailable. Reconnect it or choose another location.",
             )
         }
         val reserve = settings.downloadReserveBytes.first()
-        return if (!DownloadSpace.canStartDownload(storage.selectedAvailableBytes(), reserve)) {
+        val freeBytes = storage.selectedAvailableBytes()
+        return if (!DownloadSpace.canStartDownload(freeBytes, reserve)) {
+            AppLog.warn(
+                category = LogCategory.DOWNLOAD,
+                event = "download.preflight.failed",
+                fields = mapOf(
+                    "reason" to "reserve",
+                    "freeBytes" to freeBytes,
+                    "reserveBytes" to reserve,
+                ),
+            )
             DownloadStartResult.Error("Not enough free space above your storage reserve.")
         } else {
             null
@@ -110,12 +154,40 @@ class DownloadStarter @Inject constructor(
         trackKey: TrackKey,
         enqueue: suspend (ResolvedMedia) -> Unit,
     ): DownloadStartResult = when (val result = resolver.resolve(trackKey, forceRefresh = true)) {
-        is ApiResult.Failure -> DownloadStartResult.Error(result.error.userMessage())
+        is ApiResult.Failure -> {
+            AppLog.warn(
+                category = LogCategory.DOWNLOAD,
+                event = "download.enqueue.failed",
+                message = result.error.message,
+                fields = mapOf(
+                    "track" to trackKey.toString(),
+                    "kind" to result.error.kindLabel(),
+                ),
+            )
+            DownloadStartResult.Error(result.error.userMessage())
+        }
+
         is ApiResult.Success -> when (result.value.type) {
-            ResolvedMedia.MediaType.Hls -> DownloadStartResult.Unsupported
+            ResolvedMedia.MediaType.Hls -> {
+                AppLog.warn(
+                    category = LogCategory.DOWNLOAD,
+                    event = "download.unsupported",
+                    fields = mapOf("track" to trackKey.toString()),
+                )
+                DownloadStartResult.Unsupported
+            }
+
             ResolvedMedia.MediaType.Stream -> {
                 enqueue(result.value)
                 scheduler.schedule()
+                AppLog.info(
+                    category = LogCategory.DOWNLOAD,
+                    event = "download.enqueue",
+                    fields = mapOf(
+                        "track" to trackKey.toString(),
+                        "mediaType" to "stream",
+                    ),
+                )
                 DownloadStartResult.Started
             }
         }

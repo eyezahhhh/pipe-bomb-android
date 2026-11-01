@@ -8,9 +8,12 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 import net.pipebomb.android.core.attributes.DisplayText
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.net.ApiError
 import net.pipebomb.android.core.net.ApiResult
+import net.pipebomb.android.core.net.kindLabel
 import net.pipebomb.android.core.net.userMessage
 import net.pipebomb.android.data.AuthRepository
 import net.pipebomb.android.data.CatalogRepository
@@ -38,6 +41,15 @@ class CollectionSyncWorker @AssistedInject constructor(
         val collections = requestedId?.let { id ->
             repository.getCollection(id)?.let(::listOf).orEmpty()
         } ?: repository.getCollections()
+        AppLog.info(
+            category = LogCategory.DOWNLOAD,
+            event = "collection.sync.start",
+            fields = mapOf(
+                "requestedId" to requestedId,
+                "collections" to collections.size,
+                "retryFailed" to inputData.getBoolean(KEY_RETRY_FAILED, false),
+            ),
+        )
 
         if (inputData.getBoolean(KEY_RETRY_FAILED, false)) {
             val retried = repository.retryFailedDownloads(user.uuid)
@@ -74,6 +86,14 @@ class CollectionSyncWorker @AssistedInject constructor(
                 val playlist = result.value
                 val revision = playlist.dateModified
                 if (collection.remoteRevision != null && collection.remoteRevision == revision) {
+                    AppLog.debug(
+                        category = LogCategory.DOWNLOAD,
+                        event = "collection.sync.unchanged",
+                        fields = mapOf(
+                            "id" to collection.id,
+                            "type" to collection.collectionType.name,
+                        ),
+                    )
                     repository.markCollectionSynced(collection.id, null)
                     if (repository.retryFailedMembers(collection.id) > 0) {
                         downloadScheduler.schedule()
@@ -144,6 +164,18 @@ class CollectionSyncWorker @AssistedInject constructor(
             cache.removeTrack(key)
             coordinator.remove(key)
         }
+        AppLog.info(
+            category = LogCategory.DOWNLOAD,
+            event = "collection.sync",
+            fields = mapOf(
+                "id" to collection.id,
+                "type" to collection.collectionType.name,
+                "tracks" to tracks.size,
+                "added" to result.added,
+                "pending" to result.pendingCreated,
+                "released" to result.releasedTrackKeys.size,
+            ),
+        )
         if (repository.hasIncompleteDownloads()) downloadScheduler.schedule()
     }
 
@@ -151,6 +183,16 @@ class CollectionSyncWorker @AssistedInject constructor(
         collection: DownloadCollectionEntity,
         error: ApiError,
     ) {
+        AppLog.warn(
+            category = LogCategory.DOWNLOAD,
+            event = "collection.sync.failed",
+            message = error.message,
+            fields = mapOf(
+                "id" to collection.id,
+                "type" to collection.collectionType.name,
+                "kind" to error.kindLabel(),
+            ),
+        )
         if (error is ApiError.NotFound) {
             val released = repository.unsubscribeCollection(collection.id)
             released.forEach { key ->

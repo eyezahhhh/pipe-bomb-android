@@ -3,6 +3,8 @@ package net.pipebomb.android.playback.auto
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.model.Track
 
 @Singleton
@@ -21,13 +23,31 @@ class AutoRecentSnapshotStore @Inject constructor() {
             Snapshot(UUID.randomUUID().toString(), tracks, now).also {
                 snapshots[it.id] = it
                 currentId = it.id
+                AppLog.debug(
+                    category = LogCategory.AUTO,
+                    event = "auto.recent.save",
+                    fields = mapOf(
+                        "id" to it.id,
+                        "tracks" to tracks.size,
+                    ),
+                )
             }
         }
 
-    fun get(snapshotId: String, now: Long = System.currentTimeMillis()): Snapshot? =
-        synchronized(lock) {
+    fun get(snapshotId: String, now: Long = System.currentTimeMillis()): Snapshot? {
+        val snapshot = synchronized(lock) {
             snapshots[snapshotId]?.takeIf { now - it.createdAt < TTL_MILLIS }
         }
+        AppLog.debug(
+            category = LogCategory.AUTO,
+            event = "auto.recent.get",
+            fields = mapOf(
+                "id" to snapshotId,
+                "hit" to (snapshot != null),
+            ),
+        )
+        return snapshot
+    }
 
     private fun prune(now: Long) {
         snapshots.entries.removeAll { now - it.value.createdAt >= TTL_MILLIS }

@@ -48,7 +48,8 @@ same product, not stock Material 3.
 - The Pipe Bomb logo is fixed; do not redraw or replace it.
 - Decode API responses with `ignoreUnknownKeys = true`; unknown attribute types must
   not crash the app.
-- Never log cookies, auth headers, or full server URLs containing credentials.
+- Never log cookies, auth headers, request bodies, URL queries/userinfo, or full server
+  URLs containing credentials. Diagnostics are bounded, app-private and redacted.
 - Cleartext HTTP is allowed only because the user supplies the server URL; warn on
   `http` and never ship a hardcoded plaintext endpoint.
 - Minimum touch target is 48dp even when the web control is visually smaller.

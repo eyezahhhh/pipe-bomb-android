@@ -9,6 +9,8 @@ import androidx.media3.datasource.cache.CacheDataSink
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.SimpleCache
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.data.storage.ResolvedStorage
 import net.pipebomb.android.data.storage.StorageLocationRepository
 import net.pipebomb.android.playback.download.DownloadPinRegistry
@@ -46,7 +48,18 @@ class PlaybackCache @Inject constructor(
         storageState.cacheDir.apply { mkdirs() },
         evictor,
         databaseProvider,
-    ).also { evictor.attach(it) }
+    ).also {
+        evictor.attach(it)
+        AppLog.info(
+            category = LogCategory.CACHE,
+            event = "cache.init",
+            fields = mapOf(
+                "fallback" to storageState.isFallback,
+                "maxUnpinnedBytes" to MAX_UNPINNED_BYTES,
+                "existingBytes" to it.cacheSpace,
+            ),
+        )
+    }
 
     val dataSourceFactory: CacheDataSource.Factory = CacheDataSource.Factory()
         .setCache(cache)
@@ -72,22 +85,38 @@ class PlaybackCache @Inject constructor(
     }
 
     fun clear() {
-        cache.keys.toList().forEach { key ->
-            cache.removeResource(key)
-        }
+        val keys = cache.keys.toList()
+        val bytes = cache.cacheSpace
+        keys.forEach { key -> cache.removeResource(key) }
+        AppLog.info(
+            category = LogCategory.CACHE,
+            event = "cache.clear",
+            fields = mapOf("keys" to keys.size, "bytes" to bytes),
+        )
     }
 
     fun clearStreamed() {
-        cache.keys.toList().forEach { key ->
-            if (!pins.isPinned(key)) cache.removeResource(key)
-        }
+        val keys = cache.keys.toList().filter { !pins.isPinned(it) }
+        val bytes = cache.cacheSpace
+        keys.forEach { key -> cache.removeResource(key) }
+        AppLog.info(
+            category = LogCategory.CACHE,
+            event = "cache.clear",
+            fields = mapOf("keys" to keys.size, "bytes" to bytes, "streamedOnly" to true),
+        )
     }
 
     fun removeTrack(key: String) {
         val prefix = "track:$key:"
-        cache.keys.toList()
-            .filter { it.startsWith(prefix) }
-            .forEach { cache.removeResource(it) }
+        val keys = cache.keys.toList().filter { it.startsWith(prefix) }
+        keys.forEach { cache.removeResource(it) }
+        if (keys.isNotEmpty()) {
+            AppLog.debug(
+                category = LogCategory.CACHE,
+                event = "cache.removeTrack",
+                fields = mapOf("track" to key, "keys" to keys.size),
+            )
+        }
     }
 
     fun sizeBytes(): Long = cache.cacheSpace

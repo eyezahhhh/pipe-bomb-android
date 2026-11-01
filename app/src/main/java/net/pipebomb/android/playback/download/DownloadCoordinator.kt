@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.pipebomb.android.core.datastore.AppSettingsStore
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.net.ConnectivityStatus
 import net.pipebomb.android.data.download.DownloadRepository
 import net.pipebomb.android.data.download.DownloadState
@@ -52,6 +54,8 @@ class DownloadCoordinator @Inject constructor(
 ) {
     private val initialized = CompletableDeferred<Unit>()
     private val ready = CompletableDeferred<Unit>()
+    private val lastStates = mutableMapOf<String, Int>()
+    private var lastAvailabilitySignature: String? = null
     private val _reservePaused = MutableStateFlow(false)
     val reservePaused: StateFlow<Boolean> = _reservePaused.asStateFlow()
     private val _mobileDataPaused = MutableStateFlow(false)
@@ -66,6 +70,11 @@ class DownloadCoordinator @Inject constructor(
     fun start() {
         if (started) return
         started = true
+        AppLog.info(
+            category = LogCategory.DOWNLOAD,
+            event = "download.manager.start",
+            fields = mapOf("maxUnpinnedBytes" to PlaybackCache.MAX_UNPINNED_BYTES),
+        )
         val downloadManager = DownloadManager(
             context,
             databaseProvider,
@@ -83,6 +92,38 @@ class DownloadCoordinator @Inject constructor(
                 download: Download,
                 finalException: Exception?,
             ) {
+                val trackKey = download.request.id
+                val previousState = synchronized(lastStates) {
+                    lastStates.put(trackKey, download.state)
+                }
+                if (previousState != download.state || finalException != null) {
+                    if (download.state == Download.STATE_FAILED || finalException != null) {
+                        AppLog.error(
+                            category = LogCategory.DOWNLOAD,
+                            event = "download.failed",
+                            message = finalException?.message,
+                            fields = mapOf(
+                                "track" to trackKey,
+                                "state" to download.stateName(),
+                                "exception" to finalException?.javaClass?.simpleName,
+                                "bytes" to download.bytesDownloaded,
+                                "totalBytes" to download.contentLength,
+                            ),
+                        )
+                    } else {
+                        AppLog.info(
+                            category = LogCategory.DOWNLOAD,
+                            event = "download.state",
+                            fields = mapOf(
+                                "track" to trackKey,
+                                "from" to previousState?.let(::downloadStateName),
+                                "to" to download.stateName(),
+                                "bytes" to download.bytesDownloaded,
+                                "totalBytes" to download.contentLength,
+                            ),
+                        )
+                    }
+                }
                 scope.launch(Dispatchers.IO) {
                     repository.updateProgress(
                         trackKey = download.request.id,
@@ -98,6 +139,15 @@ class DownloadCoordinator @Inject constructor(
                 downloadManager: DownloadManager,
                 download: Download,
             ) {
+                synchronized(lastStates) { lastStates.remove(download.request.id) }
+                AppLog.info(
+                    category = LogCategory.DOWNLOAD,
+                    event = "download.removed",
+                    fields = mapOf(
+                        "track" to download.request.id,
+                        "bytes" to download.bytesDownloaded,
+                    ),
+                )
                 scope.launch(Dispatchers.IO) {
                     repository.delete(download.request.id)
                     cache.removeTrack(download.request.id)
@@ -152,6 +202,11 @@ class DownloadCoordinator @Inject constructor(
 
     suspend fun add(download: androidx.media3.exoplayer.offline.DownloadRequest) {
         awaitReady()
+        AppLog.debug(
+            category = LogCategory.DOWNLOAD,
+            event = "download.add",
+            fields = mapOf("track" to download.id),
+        )
         withContext(Dispatchers.Main) {
             manager?.addDownload(download)
         }
@@ -159,6 +214,11 @@ class DownloadCoordinator @Inject constructor(
 
     suspend fun remove(trackKey: String) {
         awaitReady()
+        AppLog.info(
+            category = LogCategory.DOWNLOAD,
+            event = "download.remove",
+            fields = mapOf("track" to trackKey),
+        )
         withContext(Dispatchers.Main) {
             manager?.removeDownload(trackKey)
         }
@@ -166,6 +226,7 @@ class DownloadCoordinator @Inject constructor(
 
     suspend fun removeAll() {
         awaitReady()
+        AppLog.info(category = LogCategory.DOWNLOAD, event = "download.removeAll")
         withContext(Dispatchers.Main) {
             manager?.removeAllDownloads()
         }
@@ -212,9 +273,33 @@ class DownloadCoordinator @Inject constructor(
         val storageUnavailable =
             !storage.resolve().downloadsEnabled || cache.storageState.isFallback
         val reserve = settings.downloadReserveBytes.first()
+        val freeBytes = storage.selectedAvailableBytes()
         val reserveBlocked = !storageUnavailable &&
-            !DownloadSpace.canStartDownload(storage.selectedAvailableBytes(), reserve)
+            !DownloadSpace.canStartDownload(freeBytes, reserve)
         _reservePaused.value = reserveBlocked
+
+        val signature = "$offline|$mobileBlocked|$storageUnavailable|$reserveBlocked"
+        if (signature != lastAvailabilitySignature) {
+            lastAvailabilitySignature = signature
+            AppLog.info(
+                category = LogCategory.DOWNLOAD,
+                event = "download.availability",
+                fields = mapOf(
+                    "online" to !offline,
+                    "metered" to connectivity.isMetered.value,
+                    "mobileBlocked" to mobileBlocked,
+                    "storageUnavailable" to storageUnavailable,
+                    "reserveBlocked" to reserveBlocked,
+                    "freeBytes" to freeBytes,
+                    "reserveBytes" to reserve,
+                    "action" to if (offline || mobileBlocked || storageUnavailable || reserveBlocked) {
+                        "paused"
+                    } else {
+                        "resumed"
+                    },
+                ),
+            )
+        }
 
         if (offline || mobileBlocked || storageUnavailable || reserveBlocked) {
             pauseAll()
@@ -290,6 +375,38 @@ class DownloadCoordinator @Inject constructor(
         withContext(Dispatchers.Main) {
             orphans.forEach(manager::removeDownload)
         }
+        AppLog.info(
+            category = LogCategory.DOWNLOAD,
+            event = "download.reconcile",
+            fields = mapOf(
+                "rows" to rows.size,
+                "indexed" to indexed.size,
+                "orphans" to orphans.size,
+                "completedDeleted" to rows.count { row ->
+                    row.state == DownloadState.Completed.name &&
+                        !indexed.containsKey(row.trackKey)
+                },
+                "failedMarked" to rows.count { row ->
+                    !indexed.containsKey(row.trackKey) &&
+                        row.state != DownloadState.Completed.name &&
+                        row.state != DownloadState.Pending.name &&
+                        row.state != DownloadState.Unsupported.name
+                },
+            ),
+        )
+    }
+
+    private fun Download.stateName(): String = downloadStateName(state)
+
+    private fun downloadStateName(state: Int): String = when (state) {
+        Download.STATE_QUEUED -> "queued"
+        Download.STATE_STOPPED -> "stopped"
+        Download.STATE_DOWNLOADING -> "downloading"
+        Download.STATE_COMPLETED -> "completed"
+        Download.STATE_FAILED -> "failed"
+        Download.STATE_REMOVING -> "removing"
+        Download.STATE_RESTARTING -> "restarting"
+        else -> "state_$state"
     }
 
     private fun Int.toDownloadState(): DownloadState = when (this) {

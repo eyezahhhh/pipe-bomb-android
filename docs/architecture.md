@@ -37,6 +37,7 @@ when its first real file lands; do not commit empty placeholder directories.
 | `core/net/` | Retrofit services, JSON config, `CookieJar`, base URL, error mapping |
 | `core/attributes/` | `AttributeMap` serializer and `AttributeReader` |
 | `core/datastore/` | Preferences DataStore: server URL, queue snapshot, settings |
+| `core/logging/` | JSONL diagnostics, redaction, crash/exit capture, logging sinks |
 | `core/design/` | Theme, colour/type/shape tokens, shared drawing primitives |
 | `ui/` | App shell, navigation graph, shared Compose components |
 | `data/` | Repositories: auth, catalog, library, playlists, search, history, downloads |

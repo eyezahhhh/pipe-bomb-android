@@ -58,7 +58,6 @@ class LibraryViewModelTest {
             serverUrlProvider = InMemoryServerUrlProvider(server.url("/").toString()),
             cookieJar = PersistentCookieJar(InMemoryCookieStorage()),
             json = PipeBombJson,
-            debugLogging = false,
         )
         viewModel = LibraryViewModel(CatalogRepository(apiClientFactory, TrackCache()))
     }

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import net.pipebomb.android.core.logging.DiagnosticsLevel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -53,6 +54,12 @@ class AppSettingsStore @Inject constructor(
         }
         .map { prefs -> prefs[Keys.AllowMobileDataDownloads] ?: false }
 
+    val diagnosticsLevel: Flow<DiagnosticsLevel> = dataStore.data
+        .catch { error ->
+            if (error is IOException) emit(emptyPreferences()) else throw error
+        }
+        .map { prefs -> DiagnosticsLevel.fromStorage(prefs[Keys.DiagnosticsLevel]) }
+
     suspend fun setServerUrl(url: String?) {
         dataStore.edit { prefs ->
             if (url == null) {
@@ -89,11 +96,18 @@ class AppSettingsStore @Inject constructor(
         }
     }
 
+    suspend fun setDiagnosticsLevel(level: DiagnosticsLevel) {
+        dataStore.edit { prefs ->
+            prefs[Keys.DiagnosticsLevel] = level.storageValue
+        }
+    }
+
     private object Keys {
         val ServerUrl = stringPreferencesKey("server_url")
         val ServerReady = booleanPreferencesKey("server_ready")
         val DownloadReserveBytes = longPreferencesKey("download_reserve_bytes")
         val AllowMobileDataDownloads = booleanPreferencesKey("allow_mobile_data_downloads")
+        val DiagnosticsLevel = stringPreferencesKey("diagnostics_level")
     }
 
     companion object {

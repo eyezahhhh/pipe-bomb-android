@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import net.pipebomb.android.MainActivity
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.playback.auto.AutoLibrarySessionCallback
 import javax.inject.Inject
 
@@ -49,6 +51,11 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLog.info(
+            category = LogCategory.PLAYBACK,
+            event = "playback.service",
+            fields = mapOf("event" to "created"),
+        )
         setMediaNotificationProvider(DefaultMediaNotificationProvider(this))
 
         val sessionActivity = PendingIntent.getActivity(
@@ -95,12 +102,25 @@ class PlaybackService : MediaLibraryService() {
     ): MediaLibrarySession? = mediaLibrarySession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        AppLog.info(
+            category = LogCategory.PLAYBACK,
+            event = "playback.service",
+            fields = mapOf(
+                "event" to "taskRemoved",
+                "isPlaying" to controller.player.isPlaying,
+            ),
+        )
         if (!controller.player.isPlaying) {
             stopSelf()
         }
     }
 
     override fun onDestroy() {
+        AppLog.info(
+            category = LogCategory.PLAYBACK,
+            event = "playback.service",
+            fields = mapOf("event" to "destroyed"),
+        )
         layoutJob?.cancel()
         layoutScope.cancel()
         mediaLibrarySession?.release()

@@ -6,6 +6,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheEvictor
 import androidx.media3.datasource.cache.CacheSpan
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import java.util.TreeSet
 
 @OptIn(UnstableApi::class)
@@ -51,6 +53,17 @@ class PinnedStreamCacheEvictor(
         }
         val activeCache = cache ?: return
         candidates.forEach(activeCache::removeSpan)
+        if (candidates.isNotEmpty()) {
+            AppLog.info(
+                category = LogCategory.CACHE,
+                event = "cache.evict",
+                fields = mapOf(
+                    "keys" to candidates.size,
+                    "bytes" to candidates.sumOf { it.length },
+                    "reason" to "refresh_pins",
+                ),
+            )
+        }
     }
 
     override fun onStartFile(cache: Cache, key: String, position: Long, length: Long) {
@@ -96,6 +109,16 @@ class PinnedStreamCacheEvictor(
         while (evictionEnabled && unpinnedBytes + requiredSpace > maxUnpinnedBytes) {
             val candidate = spans.firstOrNull { !pins.isPinned(it.key) } ?: break
             cache.removeSpan(candidate)
+            AppLog.debug(
+                category = LogCategory.CACHE,
+                event = "cache.evict",
+                fields = mapOf(
+                    "key" to candidate.key,
+                    "bytes" to candidate.length,
+                    "unpinnedBytes" to unpinnedBytes,
+                    "reason" to "quota",
+                ),
+            )
         }
     }
 

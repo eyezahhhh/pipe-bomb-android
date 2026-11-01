@@ -20,6 +20,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.di.ApplicationScope
 import net.pipebomb.android.playback.PlaybackController
 import net.pipebomb.android.playback.PlaybackSessionActions
@@ -36,10 +38,32 @@ class AutoLibrarySessionCallback @Inject constructor(
     @ApplicationScope private val scope: CoroutineScope,
 ) : MediaLibraryService.MediaLibrarySession.Callback {
 
+    override fun onDisconnected(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+    ) {
+        AppLog.info(
+            category = LogCategory.AUTO,
+            event = "auto.disconnect",
+            fields = mapOf(
+                "package" to controller.packageName,
+                "uid" to controller.uid,
+            ),
+        )
+    }
+
     override fun onConnect(
         session: MediaSession,
         controller: MediaSession.ControllerInfo,
     ): MediaSession.ConnectionResult {
+        AppLog.info(
+            category = LogCategory.AUTO,
+            event = "auto.connect",
+            fields = mapOf(
+                "package" to controller.packageName,
+                "uid" to controller.uid,
+            ),
+        )
         val defaults = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller).build()
         val commands = defaults.availableSessionCommands.buildUpon().apply {
             add(SessionCommand(PlaybackSessionActions.COMMAND_SAVE, Bundle.EMPTY))
@@ -66,6 +90,11 @@ class AutoLibrarySessionCallback @Inject constructor(
                 SessionResult(SessionError.ERROR_NOT_SUPPORTED),
             )
         }
+        AppLog.info(
+            category = LogCategory.AUTO,
+            event = "auto.command",
+            fields = mapOf("command" to customCommand.customAction),
+        )
         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
     }
 
@@ -99,13 +128,37 @@ class AutoLibrarySessionCallback @Inject constructor(
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
         val node = AutoIds.parse(parentId)
             ?: return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
+        val nodeName = node::class.simpleName.orEmpty()
+        val startedNs = System.nanoTime()
         val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
         scope.launch {
             runCatching {
                 dataSource.children(node, page.coerceAtLeast(0), pageSize.takeIf { it > 0 } ?: 30)
             }.onSuccess { items ->
+                AppLog.debug(
+                    category = LogCategory.AUTO,
+                    event = "auto.browse",
+                    fields = mapOf(
+                        "node" to nodeName,
+                        "page" to page,
+                        "pageSize" to pageSize,
+                        "results" to items.size,
+                        "durMs" to elapsedMs(startedNs),
+                    ),
+                )
                 future.set(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))
-            }.onFailure {
+            }.onFailure { error ->
+                AppLog.warn(
+                    category = LogCategory.AUTO,
+                    event = "auto.browse.error",
+                    message = error.message,
+                    fields = mapOf(
+                        "node" to nodeName,
+                        "page" to page,
+                        "exception" to error.javaClass.simpleName,
+                        "durMs" to elapsedMs(startedNs),
+                    ),
+                )
                 future.set(LibraryResult.ofError(SessionError.ERROR_UNKNOWN))
             }
         }
@@ -119,17 +172,40 @@ class AutoLibrarySessionCallback @Inject constructor(
     ): ListenableFuture<LibraryResult<MediaItem>> {
         val node = AutoIds.parse(mediaId)
             ?: return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
+        val nodeName = node::class.simpleName.orEmpty()
+        val startedNs = System.nanoTime()
         val future = SettableFuture.create<LibraryResult<MediaItem>>()
         scope.launch {
             runCatching { dataSource.item(node) }
                 .onSuccess { item ->
+                    AppLog.debug(
+                        category = LogCategory.AUTO,
+                        event = "auto.item",
+                        fields = mapOf(
+                            "node" to nodeName,
+                            "found" to (item != null),
+                            "durMs" to elapsedMs(startedNs),
+                        ),
+                    )
                     if (item == null) {
                         future.set(LibraryResult.ofError(SessionError.ERROR_UNKNOWN))
                     } else {
                         future.set(LibraryResult.ofItem(item, null))
                     }
                 }
-                .onFailure { future.set(LibraryResult.ofError(SessionError.ERROR_UNKNOWN)) }
+                .onFailure { error ->
+                    AppLog.warn(
+                        category = LogCategory.AUTO,
+                        event = "auto.item.error",
+                        message = error.message,
+                        fields = mapOf(
+                            "node" to nodeName,
+                            "exception" to error.javaClass.simpleName,
+                            "durMs" to elapsedMs(startedNs),
+                        ),
+                    )
+                    future.set(LibraryResult.ofError(SessionError.ERROR_UNKNOWN))
+                }
         }
         return future
     }
@@ -150,6 +226,7 @@ class AutoLibrarySessionCallback @Inject constructor(
         pageSize: Int,
         params: MediaLibraryService.LibraryParams?,
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+        val startedNs = System.nanoTime()
         val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
         scope.launch {
             runCatching {
@@ -159,8 +236,29 @@ class AutoLibrarySessionCallback @Inject constructor(
                     pageSize = pageSize.takeIf { it > 0 } ?: 30,
                 )
             }.onSuccess { items ->
+                AppLog.info(
+                    category = LogCategory.AUTO,
+                    event = "auto.search",
+                    fields = mapOf(
+                        "queryLength" to query.length,
+                        "page" to page,
+                        "pageSize" to pageSize,
+                        "results" to items.size,
+                        "durMs" to elapsedMs(startedNs),
+                    ),
+                )
                 future.set(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))
-            }.onFailure {
+            }.onFailure { error ->
+                AppLog.warn(
+                    category = LogCategory.AUTO,
+                    event = "auto.search.error",
+                    message = error.message,
+                    fields = mapOf(
+                        "queryLength" to query.length,
+                        "exception" to error.javaClass.simpleName,
+                        "durMs" to elapsedMs(startedNs),
+                    ),
+                )
                 future.set(LibraryResult.ofError(SessionError.ERROR_UNKNOWN))
             }
         }
@@ -176,10 +274,27 @@ class AutoLibrarySessionCallback @Inject constructor(
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
         val node = AutoIds.parse(mediaItems.firstOrNull()?.mediaId ?: "")
             ?: return Futures.immediateFailedFuture(IllegalArgumentException("Unknown media id"))
+        AppLog.info(
+            category = LogCategory.AUTO,
+            event = "auto.set_media_items",
+            fields = mapOf(
+                "node" to node::class.simpleName.orEmpty(),
+                "count" to mediaItems.size,
+                "startIndex" to startIndex,
+            ),
+        )
         val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
         scope.launch {
             resolveSelection(node, startPositionMs)
                 .onSuccess { queue ->
+                    AppLog.debug(
+                        category = LogCategory.AUTO,
+                        event = "auto.queue",
+                        fields = mapOf(
+                            "tracks" to queue.tracks.size,
+                            "startIndex" to queue.startIndex,
+                        ),
+                    )
                     future.set(
                         MediaSession.MediaItemsWithStartPosition(
                             ImmutableList.copyOf(queue.items),
@@ -188,7 +303,18 @@ class AutoLibrarySessionCallback @Inject constructor(
                         ),
                     )
                 }
-                .onFailure { future.setException(it) }
+                .onFailure { error ->
+                    AppLog.warn(
+                        category = LogCategory.AUTO,
+                        event = "auto.set_media_items.error",
+                        message = error.message,
+                        fields = mapOf(
+                            "node" to node::class.simpleName.orEmpty(),
+                            "exception" to error.javaClass.simpleName,
+                        ),
+                    )
+                    future.setException(error)
+                }
         }
         return future
     }
@@ -210,6 +336,14 @@ class AutoLibrarySessionCallback @Inject constructor(
                     item
                 }
             }
+            AppLog.debug(
+                category = LogCategory.AUTO,
+                event = "auto.add_media_items",
+                fields = mapOf(
+                    "requested" to mediaItems.size,
+                    "resolved" to resolved.size,
+                ),
+            )
             future.set(resolved)
         }
         return future
@@ -222,8 +356,14 @@ class AutoLibrarySessionCallback @Inject constructor(
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
         val state = playbackController.state.value
         if (state.queue.isEmpty()) {
+            AppLog.info(
+                category = LogCategory.AUTO,
+                event = "auto.resumption",
+                fields = mapOf("result" to "empty_queue", "forPlayback" to isForPlayback),
+            )
             return Futures.immediateFailedFuture(IllegalStateException("No queue to resume"))
         }
+        val startedNs = System.nanoTime()
         val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
         scope.launch {
             runCatching {
@@ -243,8 +383,34 @@ class AutoLibrarySessionCallback @Inject constructor(
                     resolved.startIndex,
                     state.positionMs,
                 )
-            }.onSuccess { future.set(it) }
-                .onFailure { future.setException(it) }
+            }.onSuccess { result ->
+                AppLog.info(
+                    category = LogCategory.AUTO,
+                    event = "auto.resumption",
+                    fields = mapOf(
+                        "result" to "success",
+                        "forPlayback" to isForPlayback,
+                        "tracks" to result.mediaItems.size,
+                        "startIndex" to result.startIndex,
+                        "durMs" to elapsedMs(startedNs),
+                    ),
+                )
+                future.set(result)
+            }
+                .onFailure { error ->
+                    AppLog.warn(
+                        category = LogCategory.AUTO,
+                        event = "auto.resumption",
+                        message = error.message,
+                        fields = mapOf(
+                            "result" to "failed",
+                            "forPlayback" to isForPlayback,
+                            "exception" to error.javaClass.simpleName,
+                            "durMs" to elapsedMs(startedNs),
+                        ),
+                    )
+                    future.setException(error)
+                }
         }
         return future
     }
@@ -265,4 +431,7 @@ class AutoLibrarySessionCallback @Inject constructor(
         }
         resolved
     }
+
+    private fun elapsedMs(startedNs: Long): Long =
+        (System.nanoTime() - startedNs) / 1_000_000
 }

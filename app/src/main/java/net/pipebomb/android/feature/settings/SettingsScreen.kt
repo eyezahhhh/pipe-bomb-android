@@ -1,5 +1,7 @@
 package net.pipebomb.android.feature.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +38,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.pipebomb.android.R
 import net.pipebomb.android.core.design.theme.PipeBombTheme
+import net.pipebomb.android.core.logging.DiagnosticsLevel
 import net.pipebomb.android.data.storage.StorageLocation
 import net.pipebomb.android.ui.components.PipeBombTextField
 
@@ -48,6 +51,12 @@ fun SettingsScreen(
     var showStorageChooser by remember { mutableStateOf(false) }
     var pendingStorage by remember { mutableStateOf<StorageLocation?>(null) }
     var showReserveChooser by remember { mutableStateOf(false) }
+    var showLevelChooser by remember { mutableStateOf(false) }
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri ->
+        uri?.let(viewModel::exportDiagnostics)
+    }
 
     Column(
         modifier = modifier
@@ -135,6 +144,21 @@ fun SettingsScreen(
             ActionRow("Clear cached audio", onClick = viewModel::clearCache)
             ActionRow("Remove all downloads", onClick = viewModel::removeAllDownloads)
         }
+        Section("Diagnostics") {
+            InfoRow("Logging", state.diagnosticsLevel.label)
+            ActionRow("Change logging level", onClick = { showLevelChooser = true })
+            InfoRow("Log size", formatBytes(state.logBytes))
+            InfoRow("Oldest entry", state.logOldestMs?.let(::formatAge) ?: "None")
+            ActionRow(
+                label = "Export diagnostics",
+                onClick = {
+                    exportLauncher.launch(
+                        "pipebomb-diagnostics-${System.currentTimeMillis()}.zip",
+                    )
+                },
+            )
+            ActionRow("Clear logs", onClick = viewModel::clearDiagnostics)
+        }
         Section("About") {
             InfoRow("App version", state.appVersion)
             InfoRow("API contract", "0.2.0")
@@ -197,6 +221,65 @@ fun SettingsScreen(
             onSelect = { bytes ->
                 showReserveChooser = false
                 viewModel.setReserveBytes(bytes)
+            },
+        )
+    }
+
+    if (showLevelChooser) {
+        AlertDialog(
+            onDismissRequest = { showLevelChooser = false },
+            containerColor = PipeBombTheme.colors.bgElevated,
+            title = {
+                Text(
+                    text = "Logging level",
+                    style = PipeBombTheme.typography.sectionHeading,
+                    color = PipeBombTheme.colors.fgPrimary,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.xs)) {
+                    DiagnosticsLevel.entries.forEach { level ->
+                        SelectableRow(
+                            label = level.label,
+                            selected = state.diagnosticsLevel == level,
+                            onClick = {
+                                viewModel.setDiagnosticsLevel(level)
+                                showLevelChooser = false
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLevelChooser = false }) {
+                    Text("Cancel", color = PipeBombTheme.colors.fgSecondary)
+                }
+            },
+        )
+    }
+
+    state.exportStatus?.let { status ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissExportStatus,
+            containerColor = PipeBombTheme.colors.bgElevated,
+            title = {
+                Text(
+                    text = "Diagnostics",
+                    style = PipeBombTheme.typography.sectionHeading,
+                    color = PipeBombTheme.colors.fgPrimary,
+                )
+            },
+            text = {
+                Text(
+                    text = status,
+                    style = PipeBombTheme.typography.bodySecondary,
+                    color = PipeBombTheme.colors.fgSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissExportStatus) {
+                    Text("OK", color = PipeBombTheme.colors.accentPrimary)
+                }
             },
         )
     }
@@ -507,6 +590,16 @@ private fun formatCustomInput(bytes: Long): String {
 
 private fun parseMegabytes(value: String): Long? =
     value.toDoubleOrNull()?.let { (it * MIB).toLong() }
+
+private fun formatAge(timestampMs: Long): String {
+    val elapsed = (System.currentTimeMillis() - timestampMs).coerceAtLeast(0L)
+    val minutes = elapsed / 60_000
+    if (minutes < 1) return "Just now"
+    if (minutes < 60) return "$minutes min ago"
+    val hours = minutes / 60
+    if (hours < 24) return "$hours h ago"
+    return "${hours / 24} d ago"
+}
 
 private fun formatBytes(bytes: Long): String {
     if (bytes < 1024) return "$bytes B"

@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.model.TrackIdDto
@@ -37,6 +39,7 @@ import net.pipebomb.android.core.datastore.PlaybackQueueStore
 import net.pipebomb.android.core.datastore.PlaybackSnapshot
 import net.pipebomb.android.data.TrackMetadataRepository
 import net.pipebomb.android.di.ApplicationScope
+import kotlin.math.abs
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -113,6 +116,16 @@ class PlaybackController @Inject constructor(
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                         val index = currentMediaItemIndex
                         val key = _state.value.queue.getOrNull(index) ?: return
+                        AppLog.info(
+                            category = LogCategory.PLAYBACK,
+                            event = "playback.mediaItemTransition",
+                            fields = mapOf(
+                                "index" to index,
+                                "track" to key.toString(),
+                                "reason" to transitionReason(reason),
+                                "queueSize" to _state.value.queue.size,
+                            ),
+                        )
                         _state.update { it.copy(currentIndex = index) }
                         val known = externalTracks[key] ?: _queueTracks.value[key]
                         if (known != null) _currentTrack.value = known
@@ -151,9 +164,44 @@ class PlaybackController @Inject constructor(
 
                             Player.STATE_ENDED -> _state.update { it.copy(isPlaying = false) }
                         }
+                        AppLog.debug(
+                            category = LogCategory.PLAYBACK,
+                            event = "playback.state",
+                            fields = mapOf(
+                                "state" to playbackStateName(playbackState),
+                                "isPlaying" to isPlaying,
+                                "playWhenReady" to playWhenReady,
+                                "positionMs" to currentPosition,
+                                "bufferedMs" to bufferedPosition,
+                            ),
+                        )
+                    }
+
+                    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        AppLog.debug(
+                            category = LogCategory.PLAYBACK,
+                            event = "playback.playWhenReady",
+                            fields = mapOf(
+                                "playWhenReady" to playWhenReady,
+                                "reason" to playWhenReadyReason(reason),
+                            ),
+                        )
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
+                        AppLog.error(
+                            category = LogCategory.PLAYBACK,
+                            event = "playback.error",
+                            message = error.errorCodeName,
+                            fields = mapOf(
+                                "track" to _state.value.currentKey?.toString(),
+                                "code" to error.errorCode,
+                                "codeName" to error.errorCodeName,
+                                "positionMs" to player.currentPosition,
+                                "cause" to error.cause?.message,
+                                "causeClass" to error.cause?.javaClass?.simpleName,
+                            ),
+                        )
                         retryOrSkip(error)
                     }
                 })
@@ -187,6 +235,15 @@ class PlaybackController @Inject constructor(
                 }
                 hydrateQueueMetadata(queue)
             }
+            AppLog.info(
+                category = LogCategory.PLAYBACK,
+                event = "playback.queue.restore",
+                fields = mapOf(
+                    "queueSize" to _state.value.queue.size,
+                    "index" to _state.value.currentIndex,
+                    "positionMs" to _state.value.positionMs,
+                ),
+            )
             restored = true
         }
         scope.launch {
@@ -247,6 +304,15 @@ class PlaybackController @Inject constructor(
 
     fun play(keys: List<TrackKey>, startIndex: Int = 0) {
         if (keys.isEmpty()) return
+        AppLog.info(
+            category = LogCategory.PLAYBACK,
+            event = "playback.queue.set",
+            fields = mapOf(
+                "source" to "replace",
+                "count" to keys.size,
+                "startIndex" to startIndex,
+            ),
+        )
         retriedFor = null
         bufferingSinceMs = 0
         externalQueueMode = false
@@ -286,6 +352,15 @@ class PlaybackController @Inject constructor(
 
     fun prepareExternalQueue(tracks: List<Track>, startIndex: Int) {
         if (tracks.isEmpty()) return
+        AppLog.info(
+            category = LogCategory.PLAYBACK,
+            event = "playback.queue.set",
+            fields = mapOf(
+                "source" to "external",
+                "count" to tracks.size,
+                "startIndex" to startIndex,
+            ),
+        )
         retriedFor = null
         bufferingSinceMs = 0
         externalQueueMode = true
@@ -416,8 +491,21 @@ class PlaybackController @Inject constructor(
     }
 
     fun seekTo(positionMs: Long) {
-        player.seekTo(positionMs.coerceAtLeast(0))
-        _state.update { it.copy(positionMs = positionMs.coerceAtLeast(0)) }
+        val target = positionMs.coerceAtLeast(0)
+        val previous = player.currentPosition
+        player.seekTo(target)
+        _state.update { it.copy(positionMs = target) }
+        if (abs(target - previous) > SEEK_LOG_THRESHOLD_MS) {
+            AppLog.debug(
+                category = LogCategory.PLAYBACK,
+                event = "playback.seek",
+                fields = mapOf(
+                    "track" to _state.value.currentKey?.toString(),
+                    "fromMs" to previous,
+                    "toMs" to target,
+                ),
+            )
+        }
     }
 
     fun cycleRepeat() {
@@ -514,6 +602,7 @@ class PlaybackController @Inject constructor(
     }
 
     fun clearQueue() {
+        val cleared = _state.value.queue.size
         externalQueueMode = false
         externalTracks = emptyMap()
         queueHydrationJob?.cancel()
@@ -523,6 +612,11 @@ class PlaybackController @Inject constructor(
         _queueTracks.value = emptyMap()
         originalQueue = emptyList()
         _state.value = PlaybackUiState()
+        AppLog.info(
+            category = LogCategory.PLAYBACK,
+            event = "playback.queue.cleared",
+            fields = mapOf("previousSize" to cleared),
+        )
     }
 
     private fun playCurrent(startPositionMs: Long = 0) {
@@ -672,24 +766,69 @@ class PlaybackController @Inject constructor(
             return
         }
         if (now - bufferingSinceMs < STALL_TIMEOUT_MS) return
+        AppLog.warn(
+            category = LogCategory.PLAYBACK,
+            event = "playback.stall",
+            fields = mapOf(
+                "track" to key.toString(),
+                "bufferedMs" to player.bufferedPosition,
+                "positionMs" to player.currentPosition,
+                "waitedMs" to (now - bufferingSinceMs),
+            ),
+        )
         if (retriedFor != key.toString()) {
+            AppLog.warn(
+                category = LogCategory.PLAYBACK,
+                event = "playback.retry",
+                fields = mapOf(
+                    "track" to key.toString(),
+                    "attempt" to 1,
+                    "reason" to "stall",
+                ),
+            )
             retryCurrent(key, player.currentPosition.coerceAtLeast(0))
             return
         }
         bufferingSinceMs = 0
         _state.update { it.copy(isBuffering = false, error = "Playback stalled") }
         player.pause()
+        AppLog.error(
+            category = LogCategory.PLAYBACK,
+            event = "playback.failed",
+            message = "Playback stalled",
+            fields = mapOf("track" to key.toString()),
+        )
     }
 
     private fun retryOrSkip(error: PlaybackException) {
         val key = _state.value.currentKey ?: return
         val positionMs = player.currentPosition.coerceAtLeast(0)
         if (retriedFor != key.toString()) {
+            AppLog.warn(
+                category = LogCategory.PLAYBACK,
+                event = "playback.retry",
+                fields = mapOf(
+                    "track" to key.toString(),
+                    "attempt" to 1,
+                    "reason" to "error",
+                    "code" to error.errorCodeName,
+                ),
+            )
             retryCurrent(key, positionMs)
             return
         }
         _state.update { it.copy(isBuffering = false, error = "Playback failed") }
         player.pause()
+        AppLog.error(
+            category = LogCategory.PLAYBACK,
+            event = "playback.failed",
+            message = "Playback failed",
+            fields = mapOf(
+                "track" to key.toString(),
+                "code" to error.errorCodeName,
+                "positionMs" to positionMs,
+            ),
+        )
     }
 
     private fun retryCurrent(key: TrackKey, positionMs: Long) {
@@ -708,7 +847,33 @@ class PlaybackController @Inject constructor(
         }
     }
 
+    private fun playbackStateName(state: Int): String = when (state) {
+        Player.STATE_IDLE -> "idle"
+        Player.STATE_BUFFERING -> "buffering"
+        Player.STATE_READY -> "ready"
+        Player.STATE_ENDED -> "ended"
+        else -> "state_$state"
+    }
+
+    private fun playWhenReadyReason(reason: Int): String = when (reason) {
+        Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "user_request"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "audio_focus_loss"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "audio_becoming_noisy"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "remote"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "end_of_media_item"
+        else -> "reason_$reason"
+    }
+
+    private fun transitionReason(reason: Int): String = when (reason) {
+        Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> "repeat"
+        Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> "auto"
+        Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> "seek"
+        Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> "playlist_changed"
+        else -> "reason_$reason"
+    }
+
     private companion object {
         const val STALL_TIMEOUT_MS = 20_000L
+        const val SEEK_LOG_THRESHOLD_MS = 5_000L
     }
 }

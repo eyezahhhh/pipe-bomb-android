@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
-import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
@@ -24,8 +23,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import net.pipebomb.android.MainActivity
 import net.pipebomb.android.core.datastore.AppSettingsStore
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.core.net.ConnectivityStatus
+import net.pipebomb.android.core.net.kindLabel
 import net.pipebomb.android.core.net.userMessage
 import net.pipebomb.android.data.download.DownloadRepository
 import net.pipebomb.android.data.download.DownloadState
@@ -53,15 +55,41 @@ class DownloadWorker @AssistedInject constructor(
         ensureChannel()
         coordinator.awaitReady()
         coordinator.refreshAvailability()
+        AppLog.info(
+            category = LogCategory.DOWNLOAD,
+            event = "download.work.start",
+            fields = mapOf(
+                "attempt" to runAttemptCount,
+                "online" to connectivity.isOnline.value,
+                "metered" to connectivity.isMetered.value,
+            ),
+        )
 
         if (networkBlocked()) {
             coordinator.pauseAll()
+            AppLog.warn(
+                category = LogCategory.DOWNLOAD,
+                event = "download.paused",
+                fields = mapOf(
+                    "reason" to "network",
+                    "online" to connectivity.isOnline.value,
+                    "metered" to connectivity.isMetered.value,
+                ),
+            )
             return Result.retry()
         }
 
         val reserve = settings.downloadReserveBytes.first()
         if (!storage.resolve().downloadsEnabled || cache.storageState.isFallback) {
             coordinator.pauseUnavailable()
+            AppLog.warn(
+                category = LogCategory.DOWNLOAD,
+                event = "download.paused",
+                fields = mapOf(
+                    "reason" to "storage",
+                    "fallback" to cache.storageState.isFallback,
+                ),
+            )
             repository.all()
                 .filter {
                     it.state == DownloadState.Queued.name || it.state == DownloadState.Pending.name
@@ -71,6 +99,15 @@ class DownloadWorker @AssistedInject constructor(
         }
         if (!DownloadSpace.canStartDownload(storage.selectedAvailableBytes(), reserve)) {
             coordinator.pauseForReserve()
+            AppLog.warn(
+                category = LogCategory.DOWNLOAD,
+                event = "download.paused",
+                fields = mapOf(
+                    "reason" to "reserve",
+                    "freeBytes" to storage.selectedAvailableBytes(),
+                    "reserveBytes" to reserve,
+                ),
+            )
             return Result.success()
         }
 
@@ -99,6 +136,15 @@ class DownloadWorker @AssistedInject constructor(
                 }
                 val media = when (val result = resolver.resolve(row.key, forceRefresh = true)) {
                     is ApiResult.Failure -> {
+                        AppLog.error(
+                            category = LogCategory.DOWNLOAD,
+                            event = "download.resolve.failed",
+                            message = result.error.message,
+                            fields = mapOf(
+                                "track" to row.trackKey,
+                                "kind" to result.error.kindLabel(),
+                            ),
+                        )
                         repository.markFailed(row.trackKey, result.error.userMessage())
                         continue
                     }
@@ -106,6 +152,15 @@ class DownloadWorker @AssistedInject constructor(
                     is ApiResult.Success -> result.value
                 }
                 if (media.type == ResolvedMedia.MediaType.Hls) {
+                    AppLog.warn(
+                        category = LogCategory.DOWNLOAD,
+                        event = "download.unsupported",
+                        message = "HLS downloads are not supported yet",
+                        fields = mapOf(
+                            "track" to row.trackKey,
+                            "state" to row.state,
+                        ),
+                    )
                     if (row.state == DownloadState.Pending.name) {
                         repository.markUnsupported(row.trackKey, "HLS downloads are not supported yet")
                     } else {
@@ -144,14 +199,20 @@ class DownloadWorker @AssistedInject constructor(
                     throw error
                 } catch (error: Exception) {
                     foregroundUnavailable = true
-                    Log.w(
-                        TAG,
-                        "Download foreground service unavailable; continuing in background",
-                        error,
+                    AppLog.warn(
+                        category = LogCategory.DOWNLOAD,
+                        event = "download.foreground.unavailable",
+                        message = error.message,
+                        fields = mapOf("exception" to error.javaClass.simpleName),
                     )
                 }
             }
             if (active.isEmpty() && hiddenPending == 0 && coordinator.isIdle()) {
+                AppLog.debug(
+                    category = LogCategory.DOWNLOAD,
+                    event = "download.work.exit",
+                    fields = mapOf("reason" to "idle"),
+                )
                 return Result.success()
             }
             delay(1_000)
@@ -229,7 +290,6 @@ class DownloadWorker @AssistedInject constructor(
     }
 
     private companion object {
-        const val TAG = "DownloadWorker"
         const val CHANNEL_ID = "downloads"
         const val MAX_PREPARED = 6
         const val NOTIFICATION_ID = 2001

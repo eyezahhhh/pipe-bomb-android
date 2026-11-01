@@ -34,7 +34,7 @@ class RootViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { config ->
                     if (!config.isReady) {
-                        authRepository.clearSession()
+                        authRepository.clearSession("server_not_ready")
                     } else if (authRepository.session.value is SessionState.Unknown) {
                         authRepository.refresh()
                     }

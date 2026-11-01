@@ -5,11 +5,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.model.ReportPlaybackDto
 import net.pipebomb.android.core.model.TrackKey
 import net.pipebomb.android.core.net.ApiClientFactory
 import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.core.net.apiCall
+import net.pipebomb.android.core.net.kindLabel
 import net.pipebomb.android.di.ApplicationScope
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -77,13 +80,30 @@ class PlaybackReporter @Inject constructor(
     }
 
     private suspend fun attemptReport(key: TrackKey): Boolean {
-        val result = apiCall {
+        val result = apiCall("playback.report") {
             apiClientFactory.requireApi().reportPlayback(
                 ReportPlaybackDto(
                     pluginId = key.pluginId,
                     libraryId = key.libraryId,
                     trackId = key.trackId,
                     clientName = "Pipe Bomb Android",
+                ),
+            )
+        }
+        when (result) {
+            is ApiResult.Success -> AppLog.debug(
+                category = LogCategory.PLAYBACK,
+                event = "playback.report",
+                fields = mapOf("track" to key.toString()),
+            )
+
+            is ApiResult.Failure -> AppLog.warn(
+                category = LogCategory.PLAYBACK,
+                event = "playback.report",
+                message = result.error.message,
+                fields = mapOf(
+                    "track" to key.toString(),
+                    "kind" to result.error.kindLabel(),
                 ),
             )
         }

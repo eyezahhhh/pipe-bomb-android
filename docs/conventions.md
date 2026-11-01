@@ -106,9 +106,21 @@ Imitate the existing code once the scaffold exists; this file defines the target
 
 ## Logging
 
-- Use a thin logger; debug builds may log feature events, release builds do not.
-- Never log cookies, `Authorization`, server credentials, or full URLs with tokens.
-- Playback errors include track key and type, not the resolved URL.
+- Use `AppLog` for every diagnostic record. It is a thin facade over `FileAppLogger`.
+- All builds write logs. Default level is `DiagnosticsLevel.VERBOSE`; `NORMAL` keeps
+  info and above, `OFF` keeps only fatal crash/process-exit records.
+- Records are JSONL in app-private `filesDir/diagnostics/logs`; files rotate at 4 MB,
+  the directory is capped at 16 MB, and files older than 14 days are pruned. The
+  writer is asynchronous and drops oldest records rather than blocking playback or UI.
+- Route library internals through the same sink (Media3 today). Do not add a second
+  logging stack.
+- Never log cookies, `Authorization` headers, request bodies, URL userinfo, or URL
+  query strings. Non-2xx response bodies are truncated to 1 KB and sensitive JSON
+  values are masked. Log session ids as an 8-character hash.
+- Playback and network errors include track key, status/error code, and media type,
+  not the resolved URL.
+- Use a stable event name and a category (`PLAYBACK`, `NETWORK`, `AUTO`, ...). Include
+  fields that make the record actionable without a debugger.
 
 ## Git and changes
 

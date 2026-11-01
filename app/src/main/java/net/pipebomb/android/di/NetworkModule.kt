@@ -8,7 +8,6 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
-import net.pipebomb.android.BuildConfig
 import net.pipebomb.android.core.net.ApiClientFactory
 import net.pipebomb.android.core.net.ConnectivityMonitor
 import net.pipebomb.android.core.net.ConnectivityStatus
@@ -47,7 +46,6 @@ object NetworkModule {
         serverUrlProvider = serverUrlProvider,
         cookieJar = cookieJar,
         json = json,
-        debugLogging = BuildConfig.DEBUG,
     )
 }
 

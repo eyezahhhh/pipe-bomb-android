@@ -1,6 +1,8 @@
 package net.pipebomb.android.core.net
 
 import kotlinx.serialization.SerializationException
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.model.PipeBombErrorBody
 import retrofit2.HttpException
 import java.io.IOException
@@ -24,17 +26,68 @@ sealed interface ApiResult<out T> {
     data class Failure(val error: ApiError) : ApiResult<Nothing>
 }
 
-suspend fun <T> apiCall(block: suspend () -> T): ApiResult<T> {
+suspend fun <T> apiCall(
+    label: String = "api",
+    block: suspend () -> T,
+): ApiResult<T> {
+    val startedNs = System.nanoTime()
     return try {
         ApiResult.Success(block())
     } catch (e: HttpException) {
-        ApiResult.Failure(e.toApiError())
+        val error = e.toApiError()
+        AppLog.warn(
+            category = LogCategory.NETWORK,
+            event = "api.result.failure",
+            message = error.message,
+            fields = mapOf(
+                "label" to label,
+                "kind" to error.kindLabel(),
+                "status" to e.code(),
+                "durMs" to elapsedMs(startedNs),
+            ),
+        )
+        ApiResult.Failure(error)
     } catch (e: SerializationException) {
+        AppLog.error(
+            category = LogCategory.NETWORK,
+            event = "api.parse.failure",
+            message = e.message,
+            fields = mapOf(
+                "label" to label,
+                "durMs" to elapsedMs(startedNs),
+            ),
+        )
         ApiResult.Failure(ApiError.Parse(cause = e))
     } catch (e: IOException) {
+        AppLog.warn(
+            category = LogCategory.NETWORK,
+            event = "api.result.failure",
+            message = e.message,
+            fields = mapOf(
+                "label" to label,
+                "kind" to "network",
+                "exception" to e.javaClass.simpleName,
+                "durMs" to elapsedMs(startedNs),
+            ),
+        )
         ApiResult.Failure(ApiError.Network(cause = e))
     }
 }
+
+fun ApiError.kindLabel(): String = when (this) {
+    is ApiError.Unauthorized -> "unauthorized"
+    is ApiError.Forbidden -> "forbidden"
+    is ApiError.NotFound -> "not_found"
+    is ApiError.Conflict -> "conflict"
+    is ApiError.Client -> "client"
+    is ApiError.Server -> "server"
+    is ApiError.Local -> "local"
+    is ApiError.Network -> "network"
+    is ApiError.Parse -> "parse"
+}
+
+private fun elapsedMs(startedNs: Long): Long =
+    (System.nanoTime() - startedNs) / 1_000_000
 
 fun HttpException.toApiError(): ApiError {
     val body = response()?.errorBody()?.string().orEmpty()

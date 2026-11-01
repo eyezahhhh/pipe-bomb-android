@@ -58,7 +58,6 @@ class PlaylistViewModelTest {
             serverUrlProvider = InMemoryServerUrlProvider(server.url("/").toString()),
             cookieJar = PersistentCookieJar(InMemoryCookieStorage()),
             json = PipeBombJson,
-            debugLogging = false,
         )
         val catalogRepository = CatalogRepository(apiClientFactory, TrackCache())
         val authRepository = AuthRepository(

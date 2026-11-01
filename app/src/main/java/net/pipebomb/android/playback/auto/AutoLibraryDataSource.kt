@@ -8,6 +8,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import net.pipebomb.android.core.attributes.AttributeReader
 import net.pipebomb.android.core.attributes.DisplayText
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.model.Album
 import net.pipebomb.android.core.model.Artist
 import net.pipebomb.android.core.model.Playlist
@@ -165,9 +167,22 @@ class AutoLibraryDataSource @Inject constructor(
     )
 
     private suspend fun recentSnapshot(): AutoRecentSnapshotStore.Snapshot {
-        recentSnapshots.fresh()?.let { return it }
+        recentSnapshots.fresh()?.let { snapshot ->
+            AppLog.debug(
+                category = LogCategory.AUTO,
+                event = "auto.recent.snapshot",
+                fields = mapOf("hit" to true, "tracks" to snapshot.tracks.size),
+            )
+            return snapshot
+        }
         val tracks = fetchRecentTracks()
-        return recentSnapshots.put(tracks)
+        val snapshot = recentSnapshots.put(tracks)
+        AppLog.debug(
+            category = LogCategory.AUTO,
+            event = "auto.recent.snapshot",
+            fields = mapOf("hit" to false, "tracks" to snapshot.tracks.size),
+        )
+        return snapshot
     }
 
     private suspend fun recentTracks(snapshotId: String? = null): List<Track> {
@@ -260,8 +275,22 @@ class AutoLibraryDataSource @Inject constructor(
         return tracks.mapTracks(context)
     }
 
-    suspend fun tracksByKeys(keys: List<TrackKey>): List<Track> =
-        (catalogRepository.tracks(keys) as? ApiResult.Success)?.value.orEmpty()
+    suspend fun tracksByKeys(keys: List<TrackKey>): List<Track> {
+        val result = catalogRepository.tracks(keys)
+        val tracks = (result as? ApiResult.Success)?.value.orEmpty()
+        if (tracks.size < keys.size) {
+            AppLog.debug(
+                category = LogCategory.AUTO,
+                event = "auto.tracks.missing",
+                fields = mapOf(
+                    "requested" to keys.size,
+                    "resolved" to tracks.size,
+                    "failed" to (result is ApiResult.Failure),
+                ),
+            )
+        }
+        return tracks
+    }
 
     private suspend fun searchTracks(query: String): List<Track> =
         (catalogRepository.search(query) as? ApiResult.Success)?.value?.tracks.orEmpty().take(MAX_SEARCH_RESULTS)

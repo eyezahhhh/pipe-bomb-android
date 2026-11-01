@@ -3,8 +3,11 @@ package net.pipebomb.android.playback.auto
 import android.util.LruCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import net.pipebomb.android.core.logging.AppLog
+import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.model.Resource
 import net.pipebomb.android.core.net.ApiClientFactory
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
@@ -26,17 +29,79 @@ class AutoArtworkStore @Inject constructor(
     suspend fun load(resource: Resource?): ByteArray? {
         val url = resource?.url?.takeIf { it.isNotBlank() } ?: return null
         cache.get(url)?.let { return it }
+        val host = url.toHttpUrlOrNull()?.host
         return withContext(Dispatchers.IO) {
             runCatching {
                 client.newCall(Request.Builder().url(url).build()).execute().use { response ->
-                    if (!response.isSuccessful) return@use null
-                    val body = response.body ?: return@use null
-                    if (body.contentLength() > MAX_IMAGE_BYTES) return@use null
+                    if (!response.isSuccessful) {
+                        AppLog.warn(
+                            category = LogCategory.AUTO,
+                            event = "auto.artwork.failed",
+                            message = "HTTP ${response.code}",
+                            fields = mapOf(
+                                "host" to host,
+                                "status" to response.code,
+                            ),
+                        )
+                        return@use null
+                    }
+                    val body = response.body
+                    if (body == null) {
+                        AppLog.warn(
+                            category = LogCategory.AUTO,
+                            event = "auto.artwork.failed",
+                            message = "empty body",
+                            fields = mapOf("host" to host),
+                        )
+                        return@use null
+                    }
+                    val contentLength = body.contentLength()
+                    if (contentLength > MAX_IMAGE_BYTES) {
+                        AppLog.warn(
+                            category = LogCategory.AUTO,
+                            event = "auto.artwork.failed",
+                            message = "image too large",
+                            fields = mapOf(
+                                "host" to host,
+                                "contentLength" to contentLength,
+                            ),
+                        )
+                        return@use null
+                    }
                     val bytes = body.bytes()
-                    if (bytes.size > MAX_IMAGE_BYTES) return@use null
+                    if (bytes.size > MAX_IMAGE_BYTES) {
+                        AppLog.warn(
+                            category = LogCategory.AUTO,
+                            event = "auto.artwork.failed",
+                            message = "image too large",
+                            fields = mapOf(
+                                "host" to host,
+                                "bytes" to bytes.size,
+                            ),
+                        )
+                        return@use null
+                    }
                     cache.put(url, bytes)
+                    AppLog.debug(
+                        category = LogCategory.AUTO,
+                        event = "auto.artwork",
+                        fields = mapOf(
+                            "host" to host,
+                            "bytes" to bytes.size,
+                        ),
+                    )
                     bytes
                 }
+            }.onFailure { error ->
+                AppLog.warn(
+                    category = LogCategory.AUTO,
+                    event = "auto.artwork.failed",
+                    message = error.message,
+                    fields = mapOf(
+                        "host" to host,
+                        "exception" to error.javaClass.simpleName,
+                    ),
+                )
             }.getOrNull()
         }
     }

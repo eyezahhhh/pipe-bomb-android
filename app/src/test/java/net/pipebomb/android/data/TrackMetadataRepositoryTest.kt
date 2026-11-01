@@ -44,7 +44,6 @@ class TrackMetadataRepositoryTest {
                 serverUrlProvider = InMemoryServerUrlProvider(server.url("/").toString()),
                 cookieJar = PersistentCookieJar(InMemoryCookieStorage()),
                 json = PipeBombJson,
-                debugLogging = false,
             ),
             TrackCache(),
         )

@@ -1,10 +1,12 @@
 package net.pipebomb.android.core.net
 
 import kotlinx.serialization.json.Json
+import net.pipebomb.android.core.logging.LoggingInterceptor
+import net.pipebomb.android.core.logging.NetworkPhaseListener
+import okhttp3.EventListener
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
@@ -17,7 +19,6 @@ class ApiClientFactory(
     private val serverUrlProvider: ServerUrlProvider,
     private val cookieJar: PersistentCookieJar,
     private val json: Json,
-    private val debugLogging: Boolean,
 ) {
     @Volatile
     private var cached: Pair<HttpUrl, PipeBombApi>? = null
@@ -25,6 +26,7 @@ class ApiClientFactory(
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .cookieJar(cookieJar)
+            .eventListenerFactory(EventListener.Factory { NetworkPhaseListener() })
             .addInterceptor(ServerUrlRewriteInterceptor(serverUrlProvider))
             .addInterceptor { chain ->
                 val request = chain.request()
@@ -39,15 +41,7 @@ class ApiClientFactory(
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-            .apply {
-                if (debugLogging) {
-                    addInterceptor(
-                        HttpLoggingInterceptor().apply {
-                            level = HttpLoggingInterceptor.Level.BASIC
-                        },
-                    )
-                }
-            }
+            .addInterceptor(LoggingInterceptor())
             .build()
     }
 
