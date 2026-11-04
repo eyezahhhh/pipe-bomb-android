@@ -46,6 +46,9 @@ reserved for real media/session behaviour and should run nightly or on a label.
 | Collection subscription queue | `app/src/test/.../feature/downloads/CollectionSubscriptionQueueTest.kt` | two playlists serialize without drops; duplicate taps reject |
 | Download reconciliation | `app/src/test/.../playback/download/ReconcilePlanTest.kt` | empty index never deletes metadata; missing rows become retryable |
 | Storage health messaging | `app/src/test/.../playback/StorageHealthTest.kt` | unavailable vs changed storage and error precedence |
+| Ephemeral content API | `app/src/test/.../data/EphemeralContentRepositoryTest.kt` | artist/album source and identity endpoints, track caching, identity save, album-to-playlist body |
+| Ephemeral artist state | `app/src/test/.../feature/artist/ArtistViewModelTest.kt` | identity direct load, first-source selection, source switching |
+| Identity keys | `app/src/test/.../core/model/IdentityRefTest.kt` | three-part identity parsing and malformed input |
 | Storage label | `app/src/test/.../data/storage/StorageLocationLabelTest.kt` | unavailable external selection never reports “Internal storage” |
 | Download reserve | `app/src/test/.../playback/download/DownloadSpaceTest.kt` | capacity floor and reserve boundary |
 | Playlist windowing | `app/src/test/.../feature/playlist/PlaylistViewModelTest.kt` | first page, lazy chunk, metadata preservation |

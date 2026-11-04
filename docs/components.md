@@ -37,6 +37,7 @@ long-press instead of right-click.
 | --------- | ------------- | -------- | ---------------------- |
 | Track row | `list-track/` | 54px, bg surface, 8dp radius, 42dp art, 42dp number column, title 1rem, artist 0.8rem, hover bg-hover, playing/active state | `TrackRow`: 56dp, 3dp list gap, same art/title hierarchy, no play/pause or overflow control; long-press opens the track context sheet |
 | Track list | `track-list/`, `list/` | column, 8dp gap, virtualised on web | `LazyColumn` with stable keys (`TrackKey`); 8dp gap |
+| Ephemeral content | `ephemeral-content-tabs/` | “From Other Sources”, source tabs, album shelf, numbered track list; identity variants show the source name | `EphemeralContent.kt`: source tabs, `AlbumCard` shelf, numbered `EphemeralTrackRow` list; identity album shows “Tracklist from …” |
 | Queue row | `queue-track/` | 56px, 48dp art, drag handle, past items 50% opacity | `QueueRow` in a `LazyColumn` with drag-to-reorder; handle always visible in edit mode |
 | Queue list | `queue-list/` | sidebar, drag reorder, virtualised | Bottom sheet from mini player; drag handle + long-press reorder |
 | Album card | `grid-album/` | 180px card, 180px square art, 8dp radius, bold title, 0.9rem artists, selection accent 20% + art 160/180 | `MediaCard`: adaptive grid min 140-160dp, square art 8dp, 2-line title, 1-line artist; selection tint + check badge |

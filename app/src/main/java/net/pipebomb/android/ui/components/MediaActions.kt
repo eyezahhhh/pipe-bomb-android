@@ -24,6 +24,7 @@ fun MediaActions(
     downloadEnabled: Boolean = true,
     isDownloaded: Boolean = false,
     isSaved: Boolean? = null,
+    saveEnabled: Boolean = true,
     onToggleSave: (() -> Unit)? = null,
     trailing: @Composable () -> Unit = {},
 ) {
@@ -97,7 +98,7 @@ fun MediaActions(
                 onClick = onToggleSave,
                 size = PipeBombIconButtonSize.Medium,
                 tone = PipeBombIconButtonTone.Primary,
-                enabled = enabled,
+                enabled = saveEnabled,
             )
         }
         trailing()

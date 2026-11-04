@@ -57,11 +57,12 @@ set. Treat generated code as a starting point:
 | Saved | `GET /tracks/saved`, `GET /albums/saved`, `GET /artists/saved` |
 | Albums | `GET /albums/{albumUuid}`, `POST /albums`, `GET|POST /albums/{pluginId}/{identifierId}/{identity}`, `PUT|DELETE /save`, `GET /urls` |
 | Artists | `GET /artists/{artistUuid}`, `POST /artists`, `GET|POST /artists/{pluginId}/{identifierId}/{identity}`, `PUT|DELETE /save`, `GET /urls` |
+| Ephemeral artist/album | `GET|POST /artists/{uuid}/ephemeral`, `GET|POST /albums/{uuid}/ephemeral`, `POST /artists|albums/{pluginId}/{identifierId}/{identity}`, `PUT /artists|albums/{pluginId}/{identifierId}/{identity}/save` |
 | Tracks | `GET /tracks/{pluginId}/{libraryId}/{trackId}`, `POST /tracks`, `GET /audio`, `GET /urls`, `PUT|DELETE /save` |
 | Playlists | `GET /playlists`, `GET /playlists/public`, `PUT /playlists`, `GET|POST|DELETE /playlists/{uuid}`, `GET /all`, `PATCH /tracks`, `PATCH /attributes`, `PATCH /visibility`, `GET|POST|PATCH|DELETE /filters`, `GET|PUT|DELETE /members` |
 | Libraries | `GET /libraries`, `GET /libraries/{pluginId}/{libraryId}`, `POST /libraries/{pluginId}/{libraryId}/search` |
 | Playback | `GET /tracks/.../audio`, `POST /playback-history/me` |
-| Ephemeral | `GET /ephemeral`, `POST /ephemeral/search`, `GET /ephemeral/creation-session/{uuid}`, `GET /ephemeral/attribute-buffer/{file}` |
+| Ephemeral | `GET /ephemeral`, `POST /ephemeral/search`, `GET /ephemeral/creation-session/{uuid}`, `GET /ephemeral/attribute-buffer/{file}`, artist/album ephemeral endpoints above |
 | User | `GET /users/{uuid}`, `GET /users/search` |
 | Images | `GET /resources/{dir}/{file}`, `GET /icons/{pluginId}/{iconId}` |
 

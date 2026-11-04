@@ -2,12 +2,17 @@ package net.pipebomb.android.data
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import net.pipebomb.android.core.model.AddPlaylistTracksDto
 import net.pipebomb.android.core.model.Album
+import net.pipebomb.android.core.model.AlbumEphemeralContent
 import net.pipebomb.android.core.model.Artist
+import net.pipebomb.android.core.model.ArtistEphemeralContent
 import net.pipebomb.android.core.model.EphemeralSearchDto
 import net.pipebomb.android.core.model.EphemeralSearchResults
 import net.pipebomb.android.core.model.EphemeralSource
+import net.pipebomb.android.core.model.EphemeralSourceDto
 import net.pipebomb.android.core.model.EphemeralTrack
+import net.pipebomb.android.core.model.NewPlaylistAlbumDto
 import net.pipebomb.android.core.model.PlaybackHistoryPage
 import net.pipebomb.android.core.model.Playlist
 import net.pipebomb.android.core.model.PlaylistTrack
@@ -22,6 +27,9 @@ import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackIdDto
 import net.pipebomb.android.core.model.TrackIdsDto
 import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.core.model.UpdatePlaylistTracksDto
+import net.pipebomb.android.core.model.parseIdentityRef
+import net.pipebomb.android.core.model.toTrack
 import net.pipebomb.android.core.net.ApiClientFactory
 import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.core.net.apiCall
@@ -93,7 +101,7 @@ class CatalogRepository @Inject constructor(
         }
 
     suspend fun album(idOrIdentity: String): ApiResult<Album> {
-        val identity = parseIdentity(idOrIdentity)
+        val identity = parseIdentityRef(idOrIdentity)
         return apiCall {
             if (identity == null) {
                 apiClientFactory.requireApi().getAlbum(idOrIdentity)
@@ -108,7 +116,7 @@ class CatalogRepository @Inject constructor(
     }
 
     suspend fun artist(idOrIdentity: String): ApiResult<Artist> {
-        val identity = parseIdentity(idOrIdentity)
+        val identity = parseIdentityRef(idOrIdentity)
         return apiCall {
             if (identity == null) {
                 apiClientFactory.requireApi().getArtist(idOrIdentity)
@@ -121,6 +129,68 @@ class CatalogRepository @Inject constructor(
             }
         }
     }
+
+    suspend fun artistEphemeralSources(
+        artistUuid: String,
+    ): ApiResult<List<EphemeralSource>> =
+        apiCall("artist.ephemeral.sources") {
+            apiClientFactory.requireApi().getArtistEphemeralSources(artistUuid)
+        }
+
+    suspend fun artistEphemeralContent(
+        artistUuid: String,
+        source: EphemeralSource,
+    ): ApiResult<ArtistEphemeralContent> =
+        apiCall("artist.ephemeral.content") {
+            apiClientFactory.requireApi().getArtistEphemeralContent(
+                artistUuid,
+                EphemeralSourceDto(source.pluginId, source.id),
+            )
+        }.cacheEphemeralTracks { it.tracks }
+
+    suspend fun artistEphemeralContentByIdentity(
+        pluginId: String,
+        identifierId: String,
+        identity: String,
+    ): ApiResult<ArtistEphemeralContent> =
+        apiCall("artist.ephemeral.identity") {
+            apiClientFactory.requireApi().getArtistEphemeralContentByIdentity(
+                pluginId,
+                identifierId,
+                identity,
+            )
+        }.cacheEphemeralTracks { it.tracks }
+
+    suspend fun albumEphemeralSources(
+        albumUuid: String,
+    ): ApiResult<List<EphemeralSource>> =
+        apiCall("album.ephemeral.sources") {
+            apiClientFactory.requireApi().getAlbumEphemeralSources(albumUuid)
+        }
+
+    suspend fun albumEphemeralContent(
+        albumUuid: String,
+        source: EphemeralSource,
+    ): ApiResult<AlbumEphemeralContent> =
+        apiCall("album.ephemeral.content") {
+            apiClientFactory.requireApi().getAlbumEphemeralContent(
+                albumUuid,
+                EphemeralSourceDto(source.pluginId, source.id),
+            )
+        }.cacheEphemeralTracks { it.tracks }
+
+    suspend fun albumEphemeralContentByIdentity(
+        pluginId: String,
+        identifierId: String,
+        identity: String,
+    ): ApiResult<AlbumEphemeralContent> =
+        apiCall("album.ephemeral.identity") {
+            apiClientFactory.requireApi().getAlbumEphemeralContentByIdentity(
+                pluginId,
+                identifierId,
+                identity,
+            )
+        }.cacheEphemeralTracks { it.tracks }
 
     suspend fun ownPlaylists(): ApiResult<List<Playlist>> =
         apiCall { apiClientFactory.requireApi().getOwnPlaylists() }
@@ -179,13 +249,13 @@ class CatalogRepository @Inject constructor(
 
     suspend fun addTracksToPlaylist(
         playlistUuid: String,
-        trackKeys: List<net.pipebomb.android.core.model.TrackIdDto>,
+        trackKeys: List<TrackIdDto>,
     ): ApiResult<Playlist> =
         apiCall {
             apiClientFactory.requireApi().updatePlaylistTracks(
                 playlistUuid,
-                net.pipebomb.android.core.model.UpdatePlaylistTracksDto(
-                    add = net.pipebomb.android.core.model.AddPlaylistTracksDto(
+                UpdatePlaylistTracksDto(
+                    add = AddPlaylistTracksDto(
                         tracks = trackKeys,
                         albums = emptyList(),
                     ),
@@ -193,6 +263,44 @@ class CatalogRepository @Inject constructor(
                 ),
             )
         }
+
+    suspend fun addAlbumToPlaylist(
+        playlistUuid: String,
+        album: Album,
+    ): ApiResult<Playlist> {
+        val identity = album.identities?.firstOrNull()
+        if (album.uuid == null &&
+            (identity == null || identity.pluginId.isBlank() ||
+                identity.identityId.isBlank() || identity.value.isBlank())
+        ) {
+            return ApiResult.Failure(
+                net.pipebomb.android.core.net.ApiError.Local(
+                    "This album cannot be added to a playlist.",
+                ),
+            )
+        }
+        val albumDto = if (album.uuid != null) {
+            NewPlaylistAlbumDto(uuid = album.uuid)
+        } else {
+            NewPlaylistAlbumDto(
+                pluginId = identity?.pluginId,
+                identityId = identity?.identityId,
+                identity = identity?.value,
+            )
+        }
+        return apiCall("playlist.addAlbum") {
+            apiClientFactory.requireApi().updatePlaylistTracks(
+                playlistUuid,
+                UpdatePlaylistTracksDto(
+                    add = AddPlaylistTracksDto(
+                        tracks = null,
+                        albums = listOf(albumDto),
+                    ),
+                    remove = null,
+                ),
+            )
+        }
+    }
 
     suspend fun history(page: Int, pageSize: Int): ApiResult<PlaybackHistoryPage> =
         apiCall {
@@ -244,47 +352,49 @@ class CatalogRepository @Inject constructor(
         return result
     }
 
-    suspend fun setAlbumSaved(albumUuid: String, saved: Boolean): ApiResult<Unit> =
-        apiCall {
-            val response = if (saved) {
-                apiClientFactory.requireApi().saveAlbum(albumUuid)
-            } else {
-                apiClientFactory.requireApi().unsaveAlbum(albumUuid)
+    suspend fun setAlbumSaved(idOrIdentity: String, saved: Boolean): ApiResult<Unit> {
+        val identity = parseIdentityRef(idOrIdentity)
+        if (identity != null && !saved) return ApiResult.Success(Unit)
+        return apiCall("album.save") {
+            val response = when {
+                identity != null -> apiClientFactory.requireApi().saveEphemeralAlbum(
+                    identity.pluginId,
+                    identity.identifierId,
+                    identity.value,
+                )
+
+                saved -> apiClientFactory.requireApi().saveAlbum(idOrIdentity)
+                else -> apiClientFactory.requireApi().unsaveAlbum(idOrIdentity)
             }
             if (!response.isSuccessful) throw HttpException(response)
         }
+    }
 
-    suspend fun setArtistSaved(artistUuid: String, saved: Boolean): ApiResult<Unit> =
-        apiCall {
-            val response = if (saved) {
-                apiClientFactory.requireApi().saveArtist(artistUuid)
-            } else {
-                apiClientFactory.requireApi().unsaveArtist(artistUuid)
+    suspend fun setArtistSaved(idOrIdentity: String, saved: Boolean): ApiResult<Unit> {
+        val identity = parseIdentityRef(idOrIdentity)
+        if (identity != null && !saved) return ApiResult.Success(Unit)
+        return apiCall("artist.save") {
+            val response = when {
+                identity != null -> apiClientFactory.requireApi().saveEphemeralArtist(
+                    identity.pluginId,
+                    identity.identifierId,
+                    identity.value,
+                )
+
+                saved -> apiClientFactory.requireApi().saveArtist(idOrIdentity)
+                else -> apiClientFactory.requireApi().unsaveArtist(idOrIdentity)
             }
             if (!response.isSuccessful) throw HttpException(response)
         }
+    }
 
-    private fun EphemeralTrack.toTrack(): Track = Track(
-        uuid = uuid.orEmpty(),
-        trackId = trackId,
-        pluginId = pluginId,
-        libraryId = libraryId,
-        title = title,
-        artists = artists,
-        attributes = attributes,
-        bookmarked = bookmarked,
-    )
-
-    private data class IdentityRef(
-        val pluginId: String,
-        val identifierId: String,
-        val value: String,
-    )
-
-    private fun parseIdentity(input: String): IdentityRef? {
-        val parts = input.split('~')
-        if (parts.size != 3 || parts.any { it.isBlank() }) return null
-        return IdentityRef(parts[0], parts[1], parts[2])
+    private fun <T> ApiResult<T>.cacheEphemeralTracks(
+        tracksOf: (T) -> List<EphemeralTrack>,
+    ): ApiResult<T> {
+        if (this is ApiResult.Success) {
+            trackCache.putAll(tracksOf(value).map { it.toTrack() })
+        }
+        return this
     }
 
     private companion object {

@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Pipe Bomb</string>
+    <string name="ephemeral_from_other_sources">From other sources</string>
+    <string name="ephemeral_albums">Albums</string>
+    <string name="ephemeral_tracks">Tracks</string>
+    <string name="ephemeral_tracklist_from">Tracklist from %1$s</string>
 </resources>

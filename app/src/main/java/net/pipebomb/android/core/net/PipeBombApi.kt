@@ -1,11 +1,14 @@
 package net.pipebomb.android.core.net
 
 import net.pipebomb.android.core.model.Album
+import net.pipebomb.android.core.model.AlbumEphemeralContent
 import net.pipebomb.android.core.model.Artist
+import net.pipebomb.android.core.model.ArtistEphemeralContent
 import net.pipebomb.android.core.model.AudioSession
 import net.pipebomb.android.core.model.EphemeralSearchDto
 import net.pipebomb.android.core.model.EphemeralSearchResults
 import net.pipebomb.android.core.model.EphemeralSource
+import net.pipebomb.android.core.model.EphemeralSourceDto
 import net.pipebomb.android.core.model.LoginDto
 import net.pipebomb.android.core.model.PlaybackHistoryPage
 import net.pipebomb.android.core.model.Playlist
@@ -176,6 +179,56 @@ interface PipeBombApi {
 
     @POST("ephemeral/search")
     suspend fun searchEphemeral(@Body body: EphemeralSearchDto): EphemeralSearchResults
+
+    @GET("artists/{artistUuid}/ephemeral")
+    suspend fun getArtistEphemeralSources(
+        @Path("artistUuid") artistUuid: String,
+    ): List<EphemeralSource>
+
+    @POST("artists/{artistUuid}/ephemeral")
+    suspend fun getArtistEphemeralContent(
+        @Path("artistUuid") artistUuid: String,
+        @Body body: EphemeralSourceDto,
+    ): ArtistEphemeralContent
+
+    @POST("artists/{pluginId}/{identifierId}/{identity}")
+    suspend fun getArtistEphemeralContentByIdentity(
+        @Path("pluginId") pluginId: String,
+        @Path("identifierId") identifierId: String,
+        @Path("identity") identity: String,
+    ): ArtistEphemeralContent
+
+    @GET("albums/{albumUuid}/ephemeral")
+    suspend fun getAlbumEphemeralSources(
+        @Path("albumUuid") albumUuid: String,
+    ): List<EphemeralSource>
+
+    @POST("albums/{albumUuid}/ephemeral")
+    suspend fun getAlbumEphemeralContent(
+        @Path("albumUuid") albumUuid: String,
+        @Body body: EphemeralSourceDto,
+    ): AlbumEphemeralContent
+
+    @POST("albums/{pluginId}/{identifierId}/{identity}")
+    suspend fun getAlbumEphemeralContentByIdentity(
+        @Path("pluginId") pluginId: String,
+        @Path("identifierId") identifierId: String,
+        @Path("identity") identity: String,
+    ): AlbumEphemeralContent
+
+    @PUT("artists/{pluginId}/{identifierId}/{identity}/save")
+    suspend fun saveEphemeralArtist(
+        @Path("pluginId") pluginId: String,
+        @Path("identifierId") identifierId: String,
+        @Path("identity") identity: String,
+    ): Response<Unit>
+
+    @PUT("albums/{pluginId}/{identifierId}/{identity}/save")
+    suspend fun saveEphemeralAlbum(
+        @Path("pluginId") pluginId: String,
+        @Path("identifierId") identifierId: String,
+        @Path("identity") identity: String,
+    ): Response<Unit>
 
     @PUT("tracks/{pluginId}/{libraryId}/{trackId}/save")
     suspend fun saveTrack(

@@ -391,6 +391,7 @@ fun MainNavigation() {
                         artistId = route.artistId,
                         currentKey = currentKey?.toString(),
                         isPlaying = playing,
+                        isOnline = isOnline,
                         onPlay = playbackHost::play,
                         onOpenAlbum = { open(AlbumRoute(it)) },
                         onTrackMore = { menuTrack = it },

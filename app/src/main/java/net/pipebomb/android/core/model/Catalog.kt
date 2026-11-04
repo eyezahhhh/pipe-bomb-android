@@ -229,6 +229,43 @@ data class EphemeralSearchResults(
 )
 
 @Serializable
+data class ArtistEphemeralContent(
+    val source: EphemeralSource,
+    val tracks: List<EphemeralTrack> = emptyList(),
+    val albums: List<Album> = emptyList(),
+)
+
+@Serializable
+data class AlbumEphemeralContent(
+    val source: EphemeralSource,
+    val tracks: List<EphemeralTrack> = emptyList(),
+)
+
+fun EphemeralTrack.toTrack(): Track = Track(
+    uuid = uuid.orEmpty(),
+    trackId = trackId,
+    pluginId = pluginId,
+    libraryId = libraryId,
+    title = title,
+    artists = artists,
+    attributes = attributes,
+    bookmarked = bookmarked,
+)
+
+data class EphemeralContentState<T>(
+    val isIdentity: Boolean = false,
+    val isLoadingSources: Boolean = false,
+    val isLoadingContent: Boolean = false,
+    val sources: List<EphemeralSource> = emptyList(),
+    val selectedSource: EphemeralSource? = null,
+    val content: T? = null,
+    val error: String? = null,
+) {
+    val visible: Boolean
+        get() = content != null || isLoadingSources || isLoadingContent
+}
+
+@Serializable
 data class ExternalUrl(
     val url: String,
     val iconUrl: String,
@@ -287,6 +324,12 @@ data class EphemeralSearchDto(
     val pluginId: String,
     val sourceId: String,
     val query: String,
+)
+
+@Serializable
+data class EphemeralSourceDto(
+    val pluginId: String,
+    val sourceId: String,
 )
 
 @Serializable

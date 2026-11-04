@@ -121,20 +121,21 @@ private fun TrackRowContent(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.md),
     ) {
-        when {
-            showArtwork -> ResourceImage(
-                resource = artwork,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(PipeBombTheme.shapes.small),
-            )
-
-            trackNumber != null -> Text(
+        if (trackNumber != null) {
+            Text(
                 text = trackNumber.toString(),
                 style = PipeBombTheme.typography.metadata,
                 color = colors.fgTertiary,
                 modifier = Modifier.width(24.dp),
                 maxLines = 1,
+            )
+        }
+        if (showArtwork) {
+            ResourceImage(
+                resource = artwork,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(PipeBombTheme.shapes.small),
             )
         }
         Column(

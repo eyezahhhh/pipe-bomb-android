@@ -45,6 +45,7 @@ import net.pipebomb.android.core.attributes.DisplayText
 import net.pipebomb.android.core.design.theme.PipeBombTheme
 import net.pipebomb.android.core.model.Track
 import net.pipebomb.android.core.model.TrackKey
+import net.pipebomb.android.core.model.toTrack
 import net.pipebomb.android.data.download.DownloadCollectionDraft
 import net.pipebomb.android.data.download.DownloadCollectionItem
 import net.pipebomb.android.data.download.DownloadCollectionType
@@ -53,9 +54,9 @@ import net.pipebomb.android.ui.components.PipeBombIconButton
 import net.pipebomb.android.ui.components.PipeBombIconButtonSize
 import net.pipebomb.android.ui.components.PipeBombIconButtonTone
 import net.pipebomb.android.ui.components.PipeBombSpinner
-import net.pipebomb.android.ui.components.PipeBombSpinner
 import net.pipebomb.android.ui.components.ResourceImage
 import net.pipebomb.android.ui.components.TrackRow
+import net.pipebomb.android.ui.components.albumEphemeralSection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,6 +82,11 @@ fun AlbumScreen(
         viewModel.load(albumId)
         onSyncCollection(DownloadCollectionType.Album.collectionId(albumId))
     }
+    var previousOnline by remember { mutableStateOf(isOnline) }
+    LaunchedEffect(isOnline) {
+        if (!previousOnline && isOnline) viewModel.retryEphemeral()
+        previousOnline = isOnline
+    }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val album = state.album
     var optionsOpen by remember { mutableStateOf(false) }
@@ -97,7 +103,10 @@ fun AlbumScreen(
         }
 
         album != null -> {
-            val tracks = album.tracks.orEmpty()
+            val albumTracks = album.tracks.orEmpty()
+            val ephemeralTracks = state.ephemeral.content?.tracks.orEmpty().map { it.toTrack() }
+            val actionTracks = albumTracks.ifEmpty { ephemeralTracks }
+            val actionKeys = actionTracks.map { it.key }
             LazyColumn(
                 modifier = modifier.fillMaxSize().padding(PipeBombTheme.spacing.lg),
                 verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.listGap),
@@ -126,10 +135,13 @@ fun AlbumScreen(
                                 color = PipeBombTheme.colors.fgSecondary,
                             )
                             val year = AttributeReader.integer(album.attributes, "year")
+                            val trackCount = album.tracks?.size
                             Text(
                                 text = listOfNotNull(
                                     year?.toString(),
-                                    if (tracks.size == 1) "1 track" else "${tracks.size} tracks",
+                                    trackCount?.let {
+                                        if (it == 1) "1 track" else "$it tracks"
+                                    },
                                     if (state.isOfflineCopy) "Downloaded copy" else null,
                                 ).joinToString(" · "),
                                 style = PipeBombTheme.typography.metadata,
@@ -148,32 +160,37 @@ fun AlbumScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         MediaActions(
-                            onPlay = { onPlay(tracks.map { it.key }, 0) },
-                            onShuffle = { onPlay(tracks.shuffled().map { it.key }, 0) },
-                            onPlayNext = { onPlayNext(tracks.map { it.key }) },
-                            onAddToEnd = { onAddToQueue(tracks.map { it.key }) },
-                            onDownload = {
-                                if (downloadCollection == null) {
-                                    onKeepDownloaded(
-                                        DownloadCollectionDraft(
-                                            type = DownloadCollectionType.Album,
-                                            sourceId = albumId,
-                                            title = DisplayText.title(album),
-                                            artworkUrl = DisplayText.artwork(album)?.url,
-                                            ownerName = DisplayText.artists(album),
-                                        ),
-                                        tracks,
-                                    )
-                                } else {
-                                    showStopDownload = true
+                            onPlay = { onPlay(actionKeys, 0) },
+                            onShuffle = { onPlay(actionKeys.shuffled(), 0) },
+                            onPlayNext = { onPlayNext(actionKeys) },
+                            onAddToEnd = { onAddToQueue(actionKeys) },
+                            onDownload = if (album.uuid != null) {
+                                {
+                                    if (downloadCollection == null) {
+                                        onKeepDownloaded(
+                                            DownloadCollectionDraft(
+                                                type = DownloadCollectionType.Album,
+                                                sourceId = albumId,
+                                                title = DisplayText.title(album),
+                                                artworkUrl = DisplayText.artwork(album)?.url,
+                                                ownerName = DisplayText.artists(album),
+                                            ),
+                                            actionTracks,
+                                        )
+                                    } else {
+                                        showStopDownload = true
+                                    }
                                 }
+                            } else {
+                                null
                             },
                             downloadLoading = downloadBusy,
                             downloadEnabled = isOnline || downloadCollection != null,
                             isDownloaded = downloadCollection != null,
                             isSaved = album.bookmarked == true,
+                            saveEnabled = !(album.uuid == null && album.bookmarked == true),
                             onToggleSave = if (isOnline) viewModel::toggleSave else null,
-                            enabled = tracks.isNotEmpty(),
+                            enabled = actionTracks.isNotEmpty(),
                         )
                         Spacer(Modifier.weight(1f))
                         if (isOnline) AlbumOptionsMenu(
@@ -188,20 +205,28 @@ fun AlbumScreen(
                     }
                 }
                 itemsIndexed(
-                    items = tracks,
+                    items = albumTracks,
                     key = { _, track -> track.key.toString() },
                 ) { index, track ->
                     TrackRow(
                         track = track,
                         isCurrent = track.key.toString() == currentKey,
                         isPlaying = isPlaying,
-                        onClick = { onPlay(tracks.map { it.key }, index) },
-                        onPlay = { onPlay(tracks.map { it.key }, index) },
+                        onClick = { onPlay(actionKeys, index) },
+                        onPlay = { onPlay(actionKeys, index) },
                         showArtwork = false,
                         trackNumber = index + 1,
                         onMore = { onTrackMore(track) },
                     )
                 }
+                albumEphemeralSection(
+                    state = state.ephemeral,
+                    currentKey = currentKey,
+                    isPlaying = isPlaying,
+                    onPlay = onPlay,
+                    onTrackMore = onTrackMore,
+                    onSelectSource = viewModel::selectEphemeralSource,
+                )
                 item { Box(Modifier.padding(bottom = PipeBombTheme.spacing.sm)) }
             }
 

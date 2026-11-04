@@ -17,6 +17,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,12 +35,14 @@ import net.pipebomb.android.ui.components.MediaActions
 import net.pipebomb.android.ui.components.PipeBombSpinner
 import net.pipebomb.android.ui.components.ResourceImage
 import net.pipebomb.android.ui.components.TrackRow
+import net.pipebomb.android.ui.components.artistEphemeralSection
 
 @Composable
 fun ArtistScreen(
     artistId: String,
     currentKey: String?,
     isPlaying: Boolean,
+    isOnline: Boolean = true,
     onPlay: (List<TrackKey>, Int) -> Unit,
     onOpenAlbum: (String) -> Unit,
     onTrackMore: (net.pipebomb.android.core.model.Track) -> Unit = {},
@@ -45,6 +50,11 @@ fun ArtistScreen(
     viewModel: ArtistViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(artistId) { viewModel.load(artistId) }
+    var previousOnline by remember { mutableStateOf(isOnline) }
+    LaunchedEffect(isOnline) {
+        if (!previousOnline && isOnline) viewModel.retryEphemeral()
+        previousOnline = isOnline
+    }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val artist = state.artist
 
@@ -94,7 +104,8 @@ fun ArtistScreen(
                             MediaActions(
                                 onPlay = { onPlay(tracks.map { it.key }, 0) },
                                 isSaved = artist.bookmarked == true,
-                                onToggleSave = viewModel::toggleSave,
+                                saveEnabled = !(artist.uuid == null && artist.bookmarked == true),
+                                onToggleSave = if (isOnline) viewModel::toggleSave else null,
                                 enabled = tracks.isNotEmpty(),
                                 modifier = Modifier.padding(top = PipeBombTheme.spacing.xs),
                             )
@@ -148,6 +159,15 @@ fun ArtistScreen(
                         }
                     }
                 }
+                artistEphemeralSection(
+                    state = state.ephemeral,
+                    currentKey = currentKey,
+                    isPlaying = isPlaying,
+                    onPlay = onPlay,
+                    onOpenAlbum = onOpenAlbum,
+                    onTrackMore = onTrackMore,
+                    onSelectSource = viewModel::selectEphemeralSource,
+                )
                 item { Box(Modifier.padding(bottom = PipeBombTheme.spacing.sm)) }
             }
         }
