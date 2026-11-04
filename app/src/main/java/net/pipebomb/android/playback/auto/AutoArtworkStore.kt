@@ -46,15 +46,6 @@ class AutoArtworkStore @Inject constructor(
                         return@use null
                     }
                     val body = response.body
-                    if (body == null) {
-                        AppLog.warn(
-                            category = LogCategory.AUTO,
-                            event = "auto.artwork.failed",
-                            message = "empty body",
-                            fields = mapOf("host" to host),
-                        )
-                        return@use null
-                    }
                     val contentLength = body.contentLength()
                     if (contentLength > MAX_IMAGE_BYTES) {
                         AppLog.warn(

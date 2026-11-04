@@ -30,9 +30,9 @@ class LoggingInterceptor : Interceptor {
         }
         val durationMs = elapsedMs(startedNs)
         val success = response.code in 200..299
-        val contentType = response.body?.contentType()?.toString()
+        val contentType = response.body.contentType()?.toString()
         val image = contentType?.startsWith("image/") == true
-        val bytes = response.body?.contentLength() ?: -1L
+        val bytes = response.body.contentLength()
 
         if (durationMs >= SLOW_THRESHOLD_MS) {
             AppLog.warn(

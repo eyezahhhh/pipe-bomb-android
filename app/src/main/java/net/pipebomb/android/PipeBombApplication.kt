@@ -1,7 +1,6 @@
 package net.pipebomb.android
 
 import android.app.Application
-import android.content.ComponentCallbacks2
 import android.os.Build
 import androidx.annotation.OptIn
 import androidx.hilt.work.HiltWorkerFactory
@@ -108,13 +107,11 @@ class PipeBombApplication : Application(), SingletonImageLoader.Factory, Configu
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
-            AppLog.warn(
-                category = LogCategory.APP,
-                event = "app.memory.trim",
-                fields = mapOf("level" to level),
-            )
-        }
+        AppLog.debug(
+            category = LogCategory.APP,
+            event = "app.memory.trim",
+            fields = mapOf("level" to level),
+        )
     }
 
     override fun onLowMemory() {

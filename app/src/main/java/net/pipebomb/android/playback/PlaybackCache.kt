@@ -51,7 +51,7 @@ class TrackCacheKeyFactory(
 @Singleton
 @OptIn(UnstableApi::class)
 class PlaybackCache @Inject constructor(
-    @param:ApplicationContext context: Context,
+    @ApplicationContext context: Context,
     registry: MediaSessionKeyRegistry,
     private val storage: StorageLocationRepository,
     databaseProvider: StandaloneDatabaseProvider,
