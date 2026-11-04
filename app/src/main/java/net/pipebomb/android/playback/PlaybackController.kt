@@ -644,18 +644,20 @@ class PlaybackController @Inject constructor(
             _state.update { it.copy(isBuffering = true, error = null) }
             prepareWatchdog = scope.launch {
                 delay(PREPARE_TIMEOUT_MS)
-                if (requestId == playRequestId &&
-                    player.playbackState == Player.STATE_IDLE &&
-                    player.playWhenReady
-                ) {
-                    timedOutRequestId = requestId
-                    _state.update {
-                        it.copy(
-                            isBuffering = false,
-                            error = "Playback is taking too long. Storage or network is not responding.",
-                        )
+                withContext(Dispatchers.Main) {
+                    if (requestId == playRequestId &&
+                        player.playbackState == Player.STATE_IDLE &&
+                        player.playWhenReady
+                    ) {
+                        timedOutRequestId = requestId
+                        _state.update {
+                            it.copy(
+                                isBuffering = false,
+                                error = "Playback is taking too long. Storage or network is not responding.",
+                            )
+                        }
+                        player.pause()
                     }
-                    withContext(Dispatchers.Main) { player.pause() }
                 }
             }
             withContext(Dispatchers.Main) { player.pause() }
