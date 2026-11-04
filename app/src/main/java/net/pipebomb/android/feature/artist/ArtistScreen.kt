@@ -105,7 +105,13 @@ fun ArtistScreen(
                                 onPlay = { onPlay(tracks.map { it.key }, 0) },
                                 isSaved = artist.bookmarked == true,
                                 saveEnabled = !(artist.uuid == null && artist.bookmarked == true),
-                                onToggleSave = if (isOnline) viewModel::toggleSave else null,
+                                onToggleSave = if (
+                                    isOnline && (artist.uuid != null || artist.identityKey != null)
+                                ) {
+                                    viewModel::toggleSave
+                                } else {
+                                    null
+                                },
                                 enabled = tracks.isNotEmpty(),
                                 modifier = Modifier.padding(top = PipeBombTheme.spacing.xs),
                             )

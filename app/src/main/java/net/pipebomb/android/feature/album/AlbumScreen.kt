@@ -189,7 +189,13 @@ fun AlbumScreen(
                             isDownloaded = downloadCollection != null,
                             isSaved = album.bookmarked == true,
                             saveEnabled = !(album.uuid == null && album.bookmarked == true),
-                            onToggleSave = if (isOnline) viewModel::toggleSave else null,
+                            onToggleSave = if (
+                                isOnline && (album.uuid != null || album.identityKey != null)
+                            ) {
+                                viewModel::toggleSave
+                            } else {
+                                null
+                            },
                             enabled = actionTracks.isNotEmpty(),
                         )
                         Spacer(Modifier.weight(1f))
