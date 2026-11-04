@@ -42,7 +42,8 @@ same product, not stock Material 3.
   remain navigable; network-only tabs show intentional placeholders.
 - Downloads are pinned Media3 cache entries. Streamed cache and downloads pause at the
   user-selected free-space reserve; there is no fixed download quota.
-- Changing storage deletes downloads and cached audio and restarts the process.
+- Changing storage deletes downloads and the download cache, keeps the internal streamed
+  cache, and restarts the process.
 - No server changes are assumed: auth is the `auth_token` cookie via OkHttp `CookieJar`.
 - Dark theme only at launch. Dynamic colour is disabled so the brand stays consistent.
 - The Pipe Bomb logo is fixed; do not redraw or replace it.

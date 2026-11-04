@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -23,8 +24,11 @@ import net.pipebomb.android.data.download.DownloadCollectionItem
 import net.pipebomb.android.data.download.DownloadItem
 import net.pipebomb.android.data.download.DownloadRemoveResult
 import net.pipebomb.android.data.download.DownloadRepository
+import net.pipebomb.android.data.storage.AppRestarter
 import net.pipebomb.android.data.storage.StorageLocationRepository
 import net.pipebomb.android.playback.PlaybackCache
+import net.pipebomb.android.playback.StorageHealth
+import net.pipebomb.android.playback.StorageHealthMonitor
 import net.pipebomb.android.playback.download.CollectionStartResult
 import net.pipebomb.android.playback.download.CollectionSyncScheduler
 import net.pipebomb.android.playback.download.DownloadCoordinator
@@ -36,13 +40,14 @@ import javax.inject.Inject
 data class DownloadHostState(
     val downloads: List<DownloadItem> = emptyList(),
     val collections: List<DownloadCollectionItem> = emptyList(),
+    val isLoading: Boolean = true,
     val storageAvailable: Boolean = true,
+    val storageIssue: String? = null,
     val reservePaused: Boolean = false,
     val mobileDataPaused: Boolean = false,
     val reserveBytes: Long = AppSettingsStore.DEFAULT_DOWNLOAD_RESERVE_BYTES,
     val availableBytes: Long = 0,
     val downloadedBytes: Long = 0,
-    val streamedBytes: Long = 0,
     val bulkInProgress: Boolean = false,
     val accountUuid: String? = null,
     val accountName: String? = null,
@@ -75,8 +80,11 @@ class DownloadHostViewModel @Inject constructor(
     private val settings: AppSettingsStore,
     private val cache: PlaybackCache,
     private val authRepository: AuthRepository,
+    private val storageHealth: StorageHealthMonitor,
+    private val restarter: AppRestarter,
 ) : ViewModel() {
     private val refresh = MutableStateFlow(0L)
+    private val health = MutableStateFlow<StorageHealth?>(null)
     private val subscriptions = CollectionSubscriptionQueue(viewModelScope)
     private val _effects = Channel<DownloadEffect>(Channel.BUFFERED)
     val effects = _effects.receiveAsFlow()
@@ -93,7 +101,7 @@ class DownloadHostViewModel @Inject constructor(
         DownloadRuntimeState(reservePaused, mobileDataPaused, reserveBytes)
     }
 
-    val state = combine(
+    private val libraryAndRuntime = combine(
         libraryState,
         runtimeState,
         refresh,
@@ -104,16 +112,26 @@ class DownloadHostViewModel @Inject constructor(
         DownloadHostState(
             downloads = library.first,
             collections = library.second,
-            storageAvailable = storage.resolve().downloadsEnabled && !cache.storageState.isFallback,
+            isLoading = false,
             reservePaused = runtime.reservePaused,
             mobileDataPaused = runtime.mobileDataPaused,
             reserveBytes = runtime.reserveBytes,
-            availableBytes = storage.selectedAvailableBytes(),
             downloadedBytes = library.first.sumOf { it.entity.bytesDownloaded },
-            streamedBytes = cache.sizeBytes(),
             bulkInProgress = bulk,
             accountUuid = session?.user?.uuid,
             accountName = session?.user?.username,
+        )
+    }
+
+    val state = combine(
+        libraryAndRuntime,
+        health,
+        coordinator.downloadsUnavailable,
+    ) { current, storageHealth, downloadsIssue ->
+        current.copy(
+            storageAvailable = storageHealth?.available ?: current.storageAvailable,
+            storageIssue = downloadsIssue ?: storageHealth?.issue,
+            availableBytes = storageHealth?.freeBytes ?: current.availableBytes,
         )
     }
         .flowOn(Dispatchers.IO)
@@ -127,6 +145,11 @@ class DownloadHostViewModel @Inject constructor(
         collectionSync.syncNow()
         viewModelScope.launch(Dispatchers.IO) {
             coordinator.ensureDownloadsScheduled()
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.revision.collectLatest {
+                health.value = storageHealth.snapshot()
+            }
         }
     }
 
@@ -242,6 +265,13 @@ class DownloadHostViewModel @Inject constructor(
 
     fun refresh() {
         refresh.update { it + 1 }
+        viewModelScope.launch(Dispatchers.IO) {
+            health.value = storageHealth.snapshot()
+        }
+    }
+
+    fun restartApp() {
+        restarter.restart()
     }
 
     private fun send(message: String) {

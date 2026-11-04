@@ -44,8 +44,7 @@ reserved for real media/session behaviour and should run nightly or on a label.
 | Offline auth | `app/src/test/.../data/AuthRepositoryTest.kt` | cached user survives network failure |
 | Download metadata | `app/src/test/.../data/download/DownloadRepositoryTest.kt` | enqueue, completion, collections, reference counts, blocked removal, incomplete states, failed retry |
 | Collection subscription queue | `app/src/test/.../feature/downloads/CollectionSubscriptionQueueTest.kt` | two playlists serialize without drops; duplicate taps reject |
-| Download pins | `app/src/test/.../playback/download/DownloadPinRegistryTest.kt` | track-prefix pinning and unpinning |
-| Cache evictor concurrency | `app/src/test/.../playback/download/PinnedStreamCacheEvictorTest.kt` | concurrent span updates and pin refresh |
+| Download reconciliation | `app/src/test/.../playback/download/ReconcilePlanTest.kt` | empty index never deletes metadata; missing rows become retryable |
 | Download reserve | `app/src/test/.../playback/download/DownloadSpaceTest.kt` | capacity floor and reserve boundary |
 | Playlist windowing | `app/src/test/.../feature/playlist/PlaylistViewModelTest.kt` | first page, lazy chunk, metadata preservation |
 | History windowing | `app/src/test/.../feature/library/LibraryViewModelTest.kt` | lazy load, page mapping, no duplicate chunks |

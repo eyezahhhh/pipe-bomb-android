@@ -27,6 +27,7 @@ import net.pipebomb.android.data.download.DownloadRepository
 import net.pipebomb.android.data.storage.StorageLocationRepository
 import net.pipebomb.android.playback.PlaybackCache
 import net.pipebomb.android.playback.PlaybackController
+import net.pipebomb.android.playback.StorageHealthMonitor
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.OutputStream
@@ -54,6 +55,7 @@ class DiagnosticsExporter @Inject constructor(
     private val auth: AuthRepository,
     private val cache: PlaybackCache,
     private val playback: PlaybackController,
+    private val storageHealth: StorageHealthMonitor,
 ) {
     private val prettyJson = Json { prettyPrint = true }
 
@@ -129,6 +131,7 @@ class DiagnosticsExporter @Inject constructor(
         val serverUrl = settings.serverConfig.first().serverUrl
         val reserve = settings.downloadReserveBytes.first()
         val resolvedStorage = storage.resolve()
+        val health = storageHealth.snapshot()
         val downloadRows = downloads.all()
         val session = auth.session.value
         val playbackState = playback.state.value
@@ -154,6 +157,11 @@ class DiagnosticsExporter @Inject constructor(
                     put("availableBytes", storage.selectedAvailableBytes())
                     put("totalBytes", storage.selectedTotalBytes())
                     put("reserveBytes", reserve)
+                    health.cacheDir?.let { put("cacheDir", it) }
+                    health.selectedDir?.let { put("selectedDir", it) }
+                    put("healthFallback", health.fallback)
+                    put("mismatch", health.mismatch)
+                    health.issue?.let { put("issue", it) }
                 },
             )
             put(
@@ -165,7 +173,8 @@ class DiagnosticsExporter @Inject constructor(
                     put("bytes", downloadRows.sumOf { it.bytesDownloaded })
                 },
             )
-            put("cacheBytes", cache.sizeBytes())
+            put("cacheBytes", cache.streamBytes())
+            put("downloadCacheBytes", cache.downloadBytes())
             put(
                 "connectivity",
                 buildJsonObject {

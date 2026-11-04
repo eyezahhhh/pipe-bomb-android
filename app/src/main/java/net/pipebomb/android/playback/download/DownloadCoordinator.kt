@@ -8,9 +8,11 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,7 +48,6 @@ class DownloadCoordinator @Inject constructor(
     private val cache: PlaybackCache,
     private val databaseProvider: StandaloneDatabaseProvider,
     private val repository: DownloadRepository,
-    private val pins: DownloadPinRegistry,
     private val storage: StorageLocationRepository,
     private val settings: AppSettingsStore,
     private val connectivity: ConnectivityStatus,
@@ -60,6 +61,8 @@ class DownloadCoordinator @Inject constructor(
     val reservePaused: StateFlow<Boolean> = _reservePaused.asStateFlow()
     private val _mobileDataPaused = MutableStateFlow(false)
     val mobileDataPaused: StateFlow<Boolean> = _mobileDataPaused.asStateFlow()
+    private val _downloadsUnavailable = MutableStateFlow<String?>(null)
+    val downloadsUnavailable: StateFlow<String?> = _downloadsUnavailable.asStateFlow()
 
     @Volatile
     private var started = false
@@ -73,15 +76,27 @@ class DownloadCoordinator @Inject constructor(
         AppLog.info(
             category = LogCategory.DOWNLOAD,
             event = "download.manager.start",
-            fields = mapOf("maxUnpinnedBytes" to PlaybackCache.MAX_UNPINNED_BYTES),
+            fields = mapOf("streamMaxBytes" to PlaybackCache.MAX_STREAM_BYTES),
         )
-        val downloadManager = DownloadManager(
-            context,
-            databaseProvider,
-            cache.cache,
-            DefaultHttpDataSource.Factory(),
-            Runnable::run,
-        )
+        val downloadManager = runCatching {
+            DownloadManager(
+                context,
+                databaseProvider,
+                cache.downloadCache,
+                DefaultHttpDataSource.Factory(),
+                Runnable::run,
+            )
+        }.getOrElse { error ->
+            AppLog.error(
+                category = LogCategory.DOWNLOAD,
+                event = "download.manager.start",
+                message = error.message,
+                fields = mapOf("exception" to error.javaClass.simpleName),
+            )
+            _downloadsUnavailable.value = "Download storage is unavailable. Restart Pipe Bomb."
+            ready.complete(Unit)
+            return
+        }
         downloadManager.addListener(object : DownloadManager.Listener {
             override fun onInitialized(downloadManager: DownloadManager) {
                 initialized.complete(Unit)
@@ -157,41 +172,62 @@ class DownloadCoordinator @Inject constructor(
         manager = downloadManager
 
         scope.launch {
-            initialized.await()
-            val rows = repository.all()
-            pins.setPinned(rows.map { it.key })
-            reconcile(downloadManager, rows)
-            cache.enablePinnedEviction()
-            ready.complete(Unit)
-            scope.launch {
-                repository.downloads.collect { downloads ->
-                    pins.setPinned(downloads.map { it.key })
-                    cache.refreshPins()
+            try {
+                val initializedResult = withTimeoutOrNull(START_TIMEOUT_MS) {
+                    initialized.await()
                 }
-            }
-            scope.launch {
-                combine(
-                    settings.allowMobileDataDownloads,
-                    connectivity.isOnline,
-                    connectivity.isMetered,
-                    storage.revision,
-                ) { allowMobileData, isOnline, isMetered, storageRevision ->
-                    DownloadNetworkState(
-                        allowMobileData = allowMobileData,
-                        isOnline = isOnline,
-                        isMetered = isMetered,
-                        storageRevision = storageRevision,
+                if (initializedResult == null) {
+                    AppLog.error(
+                        category = LogCategory.DOWNLOAD,
+                        event = "download.manager.start",
+                        message = "timed out waiting for DownloadManager",
                     )
+                    _downloadsUnavailable.value =
+                        "Download manager did not start. Restart Pipe Bomb."
+                    manager = null
+                    ready.complete(Unit)
+                    return@launch
                 }
-                    .distinctUntilChanged()
-                    .collect {
-                        refreshAvailability()
-                        ensureDownloadsScheduled()
+                val rows = repository.all()
+                reconcile(downloadManager, rows)
+                ready.complete(Unit)
+                scope.launch {
+                    combine(
+                        settings.allowMobileDataDownloads,
+                        connectivity.isOnline,
+                        connectivity.isMetered,
+                        storage.revision,
+                    ) { allowMobileData, isOnline, isMetered, storageRevision ->
+                        DownloadNetworkState(
+                            allowMobileData = allowMobileData,
+                            isOnline = isOnline,
+                            isMetered = isMetered,
+                            storageRevision = storageRevision,
+                        )
                     }
+                        .distinctUntilChanged()
+                        .collect {
+                            refreshAvailability()
+                            ensureDownloadsScheduled()
+                        }
+                }
+                refreshAvailability()
+                ensureDownloadsScheduled()
+                scheduler.scheduleWatchdog()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLog.error(
+                    category = LogCategory.DOWNLOAD,
+                    event = "download.manager.start",
+                    message = error.message,
+                    fields = mapOf("exception" to error.javaClass.simpleName),
+                )
+                _downloadsUnavailable.value =
+                    "Download manager did not start. Restart Pipe Bomb."
+                manager = null
+                ready.complete(Unit)
             }
-            refreshAvailability()
-            ensureDownloadsScheduled()
-            scheduler.scheduleWatchdog()
         }
     }
 
@@ -259,6 +295,7 @@ class DownloadCoordinator @Inject constructor(
     }
 
     suspend fun ensureDownloadsScheduled() {
+        if (_downloadsUnavailable.value != null) return
         if (repository.hasIncompleteDownloads()) {
             scheduler.ensureScheduled()
         }
@@ -270,8 +307,7 @@ class DownloadCoordinator @Inject constructor(
             connectivity.isMetered.value
         _mobileDataPaused.value = mobileBlocked
 
-        val storageUnavailable =
-            !storage.resolve().downloadsEnabled || cache.storageState.isFallback
+        val storageUnavailable = !cache.isDownloadStorageHealthy()
         val reserve = settings.downloadReserveBytes.first()
         val freeBytes = storage.selectedAvailableBytes()
         val reserveBlocked = !storageUnavailable &&
@@ -353,27 +389,26 @@ class DownloadCoordinator @Inject constructor(
                 error = null,
             )
         }
-        for (row in rows) {
-            if (indexed.containsKey(row.trackKey)) continue
-            if (row.state == DownloadState.Pending.name ||
-                row.state == DownloadState.Unsupported.name
-            ) {
-                continue
-            }
-            if (row.state == DownloadState.Completed.name) {
-                repository.delete(row.trackKey)
-                cache.removeTrack(row.trackKey)
-                continue
-            }
+        val plan = planReconcile(rows, indexed.keys)
+        plan.missingCompleted.forEach { trackKey ->
             repository.markFailed(
-                row.trackKey,
+                trackKey,
+                "Download file missing. Reconnect storage and retry.",
+            )
+        }
+        plan.failedIncomplete.forEach { trackKey ->
+            repository.markFailed(
+                trackKey,
                 "Download was interrupted. Retry to resume it.",
             )
         }
-        val rowIds = rows.mapTo(mutableSetOf()) { it.trackKey }
-        val orphans = indexed.keys.filterNot(rowIds::contains)
         withContext(Dispatchers.Main) {
-            orphans.forEach(manager::removeDownload)
+            plan.orphans.forEach(manager::removeDownload)
+        }
+        if (cache.isDownloadStorageHealthy()) {
+            cache.removeUnreferencedDownloadSpans(
+                rows.map { it.trackKey } + indexed.keys,
+            )
         }
         AppLog.info(
             category = LogCategory.DOWNLOAD,
@@ -381,17 +416,10 @@ class DownloadCoordinator @Inject constructor(
             fields = mapOf(
                 "rows" to rows.size,
                 "indexed" to indexed.size,
-                "orphans" to orphans.size,
-                "completedDeleted" to rows.count { row ->
-                    row.state == DownloadState.Completed.name &&
-                        !indexed.containsKey(row.trackKey)
-                },
-                "failedMarked" to rows.count { row ->
-                    !indexed.containsKey(row.trackKey) &&
-                        row.state != DownloadState.Completed.name &&
-                        row.state != DownloadState.Pending.name &&
-                        row.state != DownloadState.Unsupported.name
-                },
+                "indexHealthy" to plan.indexHealthy,
+                "missingMarked" to plan.missingCompleted.size,
+                "failedMarked" to plan.failedIncomplete.size,
+                "orphans" to plan.orphans.size,
             ),
         )
     }
@@ -415,5 +443,9 @@ class DownloadCoordinator @Inject constructor(
         Download.STATE_STOPPED -> DownloadState.Paused
         Download.STATE_DOWNLOADING -> DownloadState.Downloading
         else -> DownloadState.Queued
+    }
+
+    private companion object {
+        const val START_TIMEOUT_MS = 15_000L
     }
 }

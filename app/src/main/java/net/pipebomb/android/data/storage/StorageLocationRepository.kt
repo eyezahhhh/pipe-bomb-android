@@ -11,10 +11,14 @@ import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import net.pipebomb.android.core.logging.AppLog
 import net.pipebomb.android.core.logging.LogCategory
+import net.pipebomb.android.di.ApplicationScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,6 +26,7 @@ import javax.inject.Singleton
 @Singleton
 class StorageLocationRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
+    @param:ApplicationScope private val scope: CoroutineScope,
 ) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val _revision = MutableStateFlow(0L)
@@ -41,9 +46,12 @@ class StorageLocationRepository @Inject constructor(
     }
 
     init {
-        applyPendingSwitch()
-        if (!resolve().isFallback) {
-            File(context.filesDir, FALLBACK_MEDIA_DIR).deleteRecursively()
+        val pendingDelete = applyPendingSwitch()
+        scope.launch(Dispatchers.IO) {
+            pendingDelete?.let(::deleteCacheDirectory)
+            if (!resolve().isFallback) {
+                File(context.filesDir, FALLBACK_MEDIA_DIR).deleteRecursively()
+            }
         }
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_MEDIA_MOUNTED)
@@ -94,10 +102,16 @@ class StorageLocationRepository @Inject constructor(
     fun selectedLocationId(): String =
         prefs.getString(KEY_SELECTED_LOCATION, INTERNAL_ID) ?: INTERNAL_ID
 
-    fun selectedLocationLabel(): String =
-        prefs.getString(KEY_SELECTED_LABEL, null)
-            ?: availableLocations().firstOrNull { it.id == selectedLocationId() }?.label
-            ?: "Internal storage"
+    fun selectedLocationLabel(): String {
+        val selectedId = selectedLocationId()
+        return prefs.getString(KEY_SELECTED_LABEL, null)
+            ?: availableLocations().firstOrNull { it.id == selectedId }?.label
+            ?: if (selectedId == INTERNAL_ID) {
+                "Internal storage"
+            } else {
+                "Selected storage (unavailable)"
+            }
+    }
 
     fun resolve(): ResolvedStorage {
         val resolved = resolveStorage()
@@ -177,23 +191,23 @@ class StorageLocationRepository @Inject constructor(
         return resolved.location?.path?.totalBytes() ?: context.filesDir.totalBytes()
     }
 
-    private fun applyPendingSwitch() {
-        val target = prefs.getString(KEY_PENDING_LOCATION, null) ?: return
+    private fun applyPendingSwitch(): File? {
+        val target = prefs.getString(KEY_PENDING_LOCATION, null) ?: return null
         val label = prefs.getString(KEY_PENDING_LABEL, null)
         val deletePath = prefs.getString(KEY_PENDING_DELETE, null)
-        if (deletePath != null) deleteCacheDirectory(File(deletePath))
         prefs.edit()
             .putString(KEY_SELECTED_LOCATION, target)
             .putString(KEY_SELECTED_LABEL, label)
             .remove(KEY_PENDING_LOCATION)
             .remove(KEY_PENDING_LABEL)
             .remove(KEY_PENDING_DELETE)
-            .commit()
+            .apply()
         AppLog.info(
             category = LogCategory.STORAGE,
             event = "storage.switch.applied",
             fields = mapOf("selectedId" to target, "label" to label),
         )
+        return deletePath?.let(::File)
     }
 
     private fun deleteCacheDirectory(dir: File) {

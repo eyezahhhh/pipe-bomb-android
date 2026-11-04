@@ -11,12 +11,17 @@ storage settings. Playback/session/queue behaviour lives in `playback.md`.
   used; there is no SAF, shared-storage folder, or broad storage permission.
 - The selected location is persisted by stable volume ID. A missing selected volume
   starts the app with an internal fallback cache, keeps download metadata, disables
-  downloads, and blocks playback of downloads stored on that volume.
-- Changing location deletes all downloads and cached audio. There is no migration or
-  copying step. The old directory is deleted on the next process start before the new
-  cache opens.
-- Streamed audio has a 512 MB unpinned LRU budget. Downloads are pinned and are not
-  evicted by that budget.
+  downloads, and blocks writes to the missing volume. Downloaded tracks fall back to a
+  fresh network session when online; offline they fail with a visible error. A restart
+  is required after the volume returns.
+- Changing location deletes all downloads and the old download cache. The internal
+  streamed cache is retained. There is no migration or copying step.
+- Streamed audio always lives on internal storage under `filesDir/media-stream` with a
+  512 MB LRU budget. Downloads live on the selected volume and are user-managed.
+- Storage health is computed on IO. Settings and Downloads never call `StatFs`,
+  `getExternalFilesDirs`, or `SimpleCache.cacheSpace` on the main thread.
+- Reconciliation never deletes a completed Room row because the Media3 index is empty
+  or unavailable; it keeps the row and surfaces a retryable “file missing” state.
 - Track rows show an accent check icon for completed downloads.
 - Downloads pause when free space reaches the user-selected reserve. The reserve is
   stored in Preferences DataStore and can be Off, a preset, or a custom MB value.
@@ -25,25 +30,33 @@ storage settings. Playback/session/queue behaviour lives in `playback.md`.
 
 ## Cache layer
 
-One `SimpleCache` lives in the selected app-specific directory with
-`PinnedStreamCacheEvictor` and `StandaloneDatabaseProvider`. Exactly one instance may
-exist per process; a second instance fails on the cache lock.
+Two independent `SimpleCache` instances exist in one process:
 
-All playback uses `CacheDataSource`, including streaming, so cached tracks replay
-instantly and downloads reuse the same bytes.
+| Cache | Directory | Index DB | Evictor |
+| ----- | --------- | -------- | ------- |
+| Streamed | `filesDir/media-stream` (internal) | `exoplayer_stream.db` | `LeastRecentlyUsedCacheEvictor(512 MB)` |
+| Download | selected app-specific `media` directory | `exoplayer_internal.db` | `NoOpCacheEvictor` |
+
+The streamed cache is always internal, so a slow or removed SD does not block ordinary
+playback. The download cache keeps its existing directory and database, so current
+downloads survive the split without a migration. On upgrade, unreferenced old streamed
+spans in the download cache are removed once.
+
+`LazyTrackMediaSourceFactory` selects the cache after resolution:
 
 ```
 LazyTrackMediaSourceFactory
   -> LazyTrackMediaSource (resolve on prepare)
-     -> CacheDataSource.Factory
+     -> bypass / download / stream CacheDataSource.Factory
         -> SimpleCache
         -> upstream (OkHttp / default HTTP data source)
 ```
 
-`PinnedStreamCacheEvictor` enforces the streamed-audio budget against every cache
-span whose key is not protected by a queued, downloading, paused, failed-partial, or
-completed download. Its span state is lock-protected because Media3 cache callbacks run
-on cache threads while pin refreshes come from Room collectors.
+- Downloaded tracks use the download cache.
+- Everything else uses the internal stream cache.
+- If the download cache is unavailable, a downloaded track falls back to a fresh
+  network session through the internal stream cache when online.
+- If the stream cache itself is unusable, the bypass factory streams without caching.
 
 ## Cache identity
 
@@ -56,7 +69,8 @@ on cache threads while pin refreshes come from Room collectors.
 | HLS segment | `track:<pluginId>:<libraryId>:<trackId>:hls:<segment path>` |
 
 - Exclude host, port, session id, and query tokens.
-- Progressive playback and downloads set the same explicit stream cache key.
+- Progressive playback and downloads use the same key namespace, applied to their
+  respective cache (stream vs download).
 - Strip the `/streaming/<sessionId>` prefix before deriving HLS keys.
 - Strip query strings from HLS child URIs before using the path.
 - If a plugin can return different audio for the same track ID, add a server- or
@@ -83,7 +97,7 @@ progressive-only source resolver.
 - State: `Pending` (hidden preparation), `Queued`, `Downloading`, `Paused`,
   `Completed`, `Failed`, and `Unsupported` (hidden HLS skip).
 - A download is manually requested (`manual = true`) or owned by kept collections.
-- Metadata lives in Room; audio bytes stay in `SimpleCache`.
+- Metadata lives in Room; audio bytes stay in the download `SimpleCache`.
 
 **Manual vs kept downloads**
 
@@ -153,7 +167,7 @@ progressive-only source resolver.
 - The LRU evictor may remove unpinned streamed audio freely.
 - Pinned downloads are never evicted by LRU; the user or the storage location change
   removes them.
-- “Clear cached audio” removes only unpinned streamed audio.
+- “Clear cached audio” clears the internal streamed cache; downloads are untouched.
 - “Remove all downloads” removes download metadata and pinned media.
 
 **Playback offline**
@@ -190,7 +204,8 @@ Connectivity is tracked by `ConnectivityMonitor`. The app is downloads-first off
 | Session expiry mid-download | Mark failed; Retry resolves a fresh session |
 | Storage full / below reserve | Pause, surface the reserve, require user action |
 | Mobile data disallowed | Pause, show the Wi-Fi wait state, keep queued work |
-| Selected SD removed | Keep metadata, block affected downloads/playback, offer retry/location change |
+| Selected SD removed | Keep metadata, block downloads, stream downloaded tracks when online, fail visibly offline, require reconnect + restart |
+| Media3 download index empty/unavailable | Keep completed rows, mark them retryable; never delete metadata from reconciliation |
 | Server URL change | Clear cache and download index; keys are server-scoped |
 
 ## Testing

@@ -119,7 +119,7 @@ class DownloadStarter @Inject constructor(
             )
             return DownloadStartResult.Error("Connect to download music")
         }
-        if (!storage.resolve().downloadsEnabled || cache.storageState.isFallback) {
+        if (!cache.isDownloadStorageHealthy()) {
             AppLog.warn(
                 category = LogCategory.DOWNLOAD,
                 event = "download.preflight.failed",

@@ -82,17 +82,25 @@ class PlaybackController @Inject constructor(
     private var originalQueue: List<TrackKey> = emptyList()
     private var retriedFor: String? = null
     private var bufferingSinceMs = 0L
+    @Volatile
     private var playRequestId = 0L
+    @Volatile
+    private var timedOutRequestId = -1L
     private var externalQueueMode = false
     private var externalTracks: Map<TrackKey, Track> = emptyMap()
     private var positionTicker: Job? = null
+    private var prepareWatchdog: Job? = null
 
     val player: ExoPlayer by lazy {
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(
                 LazyTrackMediaSourceFactory(
                     resolver = resolver,
-                    childFactory = DefaultMediaSourceFactory(cache.dataSourceFactory)
+                    streamFactory = DefaultMediaSourceFactory(cache.streamDataSourceFactory)
+                        .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(5)),
+                    downloadFactory = DefaultMediaSourceFactory(cache.downloadDataSourceFactory)
+                        .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(5)),
+                    bypassFactory = DefaultMediaSourceFactory(cache.bypassDataSourceFactory)
                         .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(5)),
                     scope = scope,
                 ),
@@ -336,6 +344,8 @@ class PlaybackController @Inject constructor(
     fun playIndex(index: Int) {
         val current = _state.value
         if (index !in current.queue.indices) return
+        prepareWatchdog?.cancel()
+        prepareWatchdog = null
         if (player.mediaItemCount == current.queue.size) {
             player.seekTo(index, 0)
             if (player.currentMediaItemIndex == index) {
@@ -352,6 +362,8 @@ class PlaybackController @Inject constructor(
 
     fun prepareExternalQueue(tracks: List<Track>, startIndex: Int) {
         if (tracks.isEmpty()) return
+        prepareWatchdog?.cancel()
+        prepareWatchdog = null
         AppLog.info(
             category = LogCategory.PLAYBACK,
             event = "playback.queue.set",
@@ -603,6 +615,8 @@ class PlaybackController @Inject constructor(
 
     fun clearQueue() {
         val cleared = _state.value.queue.size
+        prepareWatchdog?.cancel()
+        prepareWatchdog = null
         externalQueueMode = false
         externalTracks = emptyMap()
         queueHydrationJob?.cancel()
@@ -622,22 +636,41 @@ class PlaybackController @Inject constructor(
     private fun playCurrent(startPositionMs: Long = 0) {
         val key = _state.value.currentKey ?: return
         val requestId = ++playRequestId
+        prepareWatchdog?.cancel()
         bufferingSinceMs = 0
         externalQueueMode = false
         externalTracks = emptyMap()
         scope.launch {
             _state.update { it.copy(isBuffering = true, error = null) }
+            prepareWatchdog = scope.launch {
+                delay(PREPARE_TIMEOUT_MS)
+                if (requestId == playRequestId &&
+                    player.playbackState == Player.STATE_IDLE &&
+                    player.playWhenReady
+                ) {
+                    timedOutRequestId = requestId
+                    _state.update {
+                        it.copy(
+                            isBuffering = false,
+                            error = "Playback is taking too long. Storage or network is not responding.",
+                        )
+                    }
+                    withContext(Dispatchers.Main) { player.pause() }
+                }
+            }
             withContext(Dispatchers.Main) { player.pause() }
             val queue = _state.value.queue
             mergeQueueTracks(metadata.local(queue), overwrite = false)
             val track = resolveTrack(key) ?: placeholderTrack(key)
-            if (requestId != playRequestId) return@launch
+            if (requestId != playRequestId || timedOutRequestId == requestId) return@launch
             _currentTrack.value = track
             _queueTracks.update { it + (key to track) }
             val stateNow = _state.value
             val items = buildMediaItems(stateNow.queue)
             withContext(Dispatchers.Main) {
-                if (requestId != playRequestId) return@withContext
+                if (requestId != playRequestId || timedOutRequestId == requestId) {
+                    return@withContext
+                }
                 context.startService(Intent(context, PlaybackService::class.java))
                 player.setMediaItems(
                     items,
@@ -874,6 +907,7 @@ class PlaybackController @Inject constructor(
 
     private companion object {
         const val STALL_TIMEOUT_MS = 20_000L
+        const val PREPARE_TIMEOUT_MS = 15_000L
         const val SEEK_LOG_THRESHOLD_MS = 5_000L
     }
 }

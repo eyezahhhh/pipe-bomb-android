@@ -84,12 +84,17 @@ class PipeBombApplication : Application(), SingletonImageLoader.Factory, Configu
             ProcessExitLogger(this@PipeBombApplication).logPreviousExits()
         }
         if (isMainProcess) {
-            val startup = EntryPointAccessors.fromApplication(this, AppStartupEntryPoint::class.java)
-            startup.playbackReporter()
-            startup.downloadCoordinator().start()
-            startup.collectionSyncScheduler().apply {
-                schedulePeriodic()
-                syncNow()
+            applicationScope.launch(Dispatchers.IO) {
+                val startup = EntryPointAccessors.fromApplication(
+                    this@PipeBombApplication,
+                    AppStartupEntryPoint::class.java,
+                )
+                startup.playbackReporter()
+                startup.downloadCoordinator().start()
+                startup.collectionSyncScheduler().apply {
+                    schedulePeriodic()
+                    syncNow()
+                }
             }
         }
     }
@@ -126,7 +131,6 @@ class PipeBombApplication : Application(), SingletonImageLoader.Factory, Configu
     }
 
     private fun logSessionStart(isMainProcess: Boolean) {
-        val storageState = runCatching { storage.get().resolve() }.getOrNull()
         AppLog.info(
             category = LogCategory.APP,
             event = "app.session.start",
@@ -141,20 +145,21 @@ class PipeBombApplication : Application(), SingletonImageLoader.Factory, Configu
                 "process" to applicationInfo.processName,
                 "mainProcess" to isMainProcess,
                 "loggingLevel" to AppLog.currentLevel().storageValue,
-                "storageId" to storageState?.selectedId,
-                "storageFallback" to storageState?.isFallback,
                 "online" to connectivity.isOnline.value,
                 "metered" to connectivity.isMetered.value,
             ),
         )
-        applicationScope.launch {
+        applicationScope.launch(Dispatchers.IO) {
             val server = settings.serverConfig.first().serverUrl
+            val storageState = runCatching { storage.get().resolve() }.getOrNull()
             AppLog.info(
                 category = LogCategory.APP,
                 event = "app.session.config",
                 fields = mapOf(
                     "server" to server?.let(LogRedaction::url),
                     "loggingLevel" to settings.diagnosticsLevel.first().storageValue,
+                    "storageId" to storageState?.selectedId,
+                    "storageFallback" to storageState?.isFallback,
                 ),
             )
         }

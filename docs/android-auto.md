@@ -6,7 +6,7 @@ bridging, or Auto artwork.
 ## Service
 
 `PlaybackService` extends Media3 `MediaLibraryService` and owns both the phone and Auto
-surface through one `ExoPlayer` and one `SimpleCache`.
+surface through one `ExoPlayer` and the streamed/download cache pair.
 
 - `MediaLibrarySession` uses `AutoLibrarySessionCallback`.
 - The notification provider is the default Media3 provider, so the same session serves

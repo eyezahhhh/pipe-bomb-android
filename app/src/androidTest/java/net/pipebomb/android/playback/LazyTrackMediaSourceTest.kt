@@ -45,7 +45,9 @@ class LazyTrackMediaSourceTest {
         val key = TrackKey("plugin", "library", "track")
         val source = LazyTrackMediaSourceFactory(
             resolver = failingResolver(),
-            childFactory = unusedChildFactory(),
+            streamFactory = unusedChildFactory(),
+            downloadFactory = unusedChildFactory(),
+            bypassFactory = unusedChildFactory(),
             scope = scope,
         ).createMediaSource(syntheticItem(key))
         val publishedTimeline = arrayOfNulls<Timeline>(1)
@@ -106,7 +108,9 @@ class LazyTrackMediaSourceTest {
         val key = TrackKey("plugin", "library", "track")
         val factory = LazyTrackMediaSourceFactory(
             resolver = failingResolver(),
-            childFactory = unusedChildFactory(),
+            streamFactory = unusedChildFactory(),
+            downloadFactory = unusedChildFactory(),
+            bypassFactory = unusedChildFactory(),
             scope = scope,
         )
         val error = AtomicReference<PlaybackException?>(null)

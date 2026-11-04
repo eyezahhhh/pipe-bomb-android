@@ -57,8 +57,9 @@ PlaybackController (app layer)
         -> LazyTrackMediaSourceFactory
            -> LazyTrackMediaSource (per synthetic item)
               -> PlaybackResolver on prepare
-              -> CacheDataSource.Factory
-                 -> SimpleCache (single app-wide instance)
+              -> stream / download / bypass CacheDataSource.Factory
+                 -> internal stream SimpleCache
+                 -> selected-storage download SimpleCache
                  -> ProgressiveMediaSource | HlsMediaSource
 ```
 

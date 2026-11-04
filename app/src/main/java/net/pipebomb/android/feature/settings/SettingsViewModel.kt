@@ -27,6 +27,7 @@ import net.pipebomb.android.data.storage.StorageLocation
 import net.pipebomb.android.data.storage.StorageLocationRepository
 import net.pipebomb.android.playback.PlaybackCache
 import net.pipebomb.android.playback.PlaybackController
+import net.pipebomb.android.playback.StorageHealthMonitor
 import net.pipebomb.android.playback.download.CollectionSyncScheduler
 import net.pipebomb.android.playback.download.DownloadCoordinator
 import net.pipebomb.android.playback.download.DownloadScheduler
@@ -40,6 +41,7 @@ data class SettingsUiState(
     val appVersion: String = BuildConfig.VERSION_NAME,
     val storageLabel: String = "Internal storage",
     val storageAvailable: Boolean = true,
+    val storageIssue: String? = null,
     val restartRequired: Boolean = false,
     val storageLocations: List<StorageLocation> = emptyList(),
     val selectedLocationId: String = StorageLocationRepository.INTERNAL_ID,
@@ -69,6 +71,7 @@ class SettingsViewModel @Inject constructor(
     private val collectionSync: CollectionSyncScheduler,
     private val restarter: AppRestarter,
     private val diagnostics: DiagnosticsExporter,
+    private val storageHealth: StorageHealthMonitor,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
@@ -126,7 +129,7 @@ class SettingsViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
-            val storageState = storage.resolve()
+            val health = storageHealth.snapshot()
             val locations = withContext(Dispatchers.IO) { storage.availableLocations() }
             val reserve = settings.downloadReserveBytes.first()
             val totalBytes = downloads.totalBytes.first()
@@ -135,20 +138,23 @@ class SettingsViewModel @Inject constructor(
                     serverUrl = serverUrlProvider.current()?.toString().orEmpty(),
                     username = (authRepository.session.value as? SessionState.Authenticated)
                         ?.user?.username.orEmpty(),
-                    cacheBytes = playbackCache.sizeBytes(),
                     downloadedBytes = totalBytes,
-                    storageLabel = storage.selectedLocationLabel(),
-                    storageAvailable = storageState.downloadsEnabled &&
-                        !playbackCache.storageState.isFallback,
-                    restartRequired = storageState.downloadsEnabled &&
-                        playbackCache.storageState.isFallback,
+                    storageLabel = health.label,
+                    storageAvailable = health.available,
+                    storageIssue = health.issue,
+                    restartRequired = health.mismatch,
                     storageLocations = locations,
-                    selectedLocationId = storageState.selectedId,
-                    freeBytes = storage.selectedAvailableBytes(),
-                    totalBytes = storage.selectedTotalBytes(),
+                    selectedLocationId = health.selectedId,
+                    freeBytes = health.freeBytes,
+                    totalBytes = health.totalBytes,
                     reserveBytes = reserve,
                     appVersion = BuildConfig.VERSION_NAME,
                 )
+            }
+            withContext(Dispatchers.IO) {
+                runCatching { playbackCache.streamBytes() }.getOrNull()
+            }?.let { cacheBytes ->
+                _state.update { it.copy(cacheBytes = cacheBytes) }
             }
             refreshDiagnostics()
         }
@@ -285,6 +291,7 @@ class SettingsViewModel @Inject constructor(
             scheduler.cancel()
             collectionSync.cancel()
             runCatching { coordinator.pauseAll() }
+            runCatching { coordinator.removeAll() }
             downloads.deleteAll()
             withContext(Dispatchers.Main) { playbackController.clearQueue() }
             restarter.restart()
@@ -321,6 +328,7 @@ class SettingsViewModel @Inject constructor(
             downloads.deleteAll()
             withContext(Dispatchers.Main) { playbackController.clearQueue() }
             playbackCache.clearStreamed()
+            playbackCache.clearDownloads()
             authRepository.clearSession("server_change")
             serverUrlProvider.clear()
             AppLog.info(

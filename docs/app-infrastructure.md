@@ -24,18 +24,19 @@ live in `architecture.md`.
 | Queue order, current index, position | DataStore JSON snapshot, written throttled |
 | Auth cookie | OkHttp `CookieJar` backed by app-private storage |
 | Last authenticated user | Small synchronous bootstrap SharedPreferences for offline launch |
-| Streamed audio | Media3 `SimpleCache` in the selected app-specific directory |
-| Downloads | Same `SimpleCache` + Room download metadata and Media3 download index |
+| Streamed audio | Media3 `SimpleCache` in internal `filesDir/media-stream` |
+| Downloads | Media3 `SimpleCache` in the selected app-specific directory + Room metadata and Media3 download index |
 | Diagnostics | JSONL files in app-private `filesDir/diagnostics/logs` (16 MB, 14 days) |
 
-The storage pointer is synchronous because `SimpleCache` must choose its directory
+The download cache pointer is synchronous because `SimpleCache` must choose its directory
 before asynchronous DataStore collection can start. All other settings remain in
 Preferences DataStore.
 
 Changing the server URL clears cookies, queue, download metadata, Media3 downloads,
 and cache. Switching accounts keeps ordinary media cache (cache keys are not
 user-scoped) and downloads, but clears user-specific DataStore state. Changing storage
-location deletes all downloads and cached audio and restarts the process.
+location deletes all downloads and the download cache, keeps the internal streamed cache,
+and restarts the process.
 
 ## Networking and errors
 
@@ -69,6 +70,8 @@ location deletes all downloads and cached audio and restarts the process.
   internals, cache eviction, downloads, storage, and Android Auto browse/queue.
 - Uncaught exceptions are written as `FATAL`; `ApplicationExitInfo` records crashes,
   ANRs, low-memory kills and trace snippets on the next launch.
+- `storage.health` records the selected and actual cache directories, fallback/mismatch
+  state, and free space when storage becomes unhealthy.
 - Settings → Diagnostics exports a zip to a user-chosen Downloads location (SAF):
   `logs/*.log`, `summary.txt` (newest 200 warnings/errors), `state.json`, `README.txt`.
 - Logs are excluded from auto-backup and device transfer. Never log cookies, auth

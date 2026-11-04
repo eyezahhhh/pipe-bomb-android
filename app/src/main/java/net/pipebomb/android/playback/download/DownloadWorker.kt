@@ -54,6 +54,15 @@ class DownloadWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         ensureChannel()
         coordinator.awaitReady()
+        coordinator.downloadsUnavailable.value?.let { issue ->
+            AppLog.warn(
+                category = LogCategory.DOWNLOAD,
+                event = "download.work.exit",
+                message = issue,
+                fields = mapOf("reason" to "manager_unavailable"),
+            )
+            return Result.success()
+        }
         coordinator.refreshAvailability()
         AppLog.info(
             category = LogCategory.DOWNLOAD,
@@ -80,7 +89,7 @@ class DownloadWorker @AssistedInject constructor(
         }
 
         val reserve = settings.downloadReserveBytes.first()
-        if (!storage.resolve().downloadsEnabled || cache.storageState.isFallback) {
+        if (!cache.isDownloadStorageHealthy()) {
             coordinator.pauseUnavailable()
             AppLog.warn(
                 category = LogCategory.DOWNLOAD,
@@ -182,7 +191,7 @@ class DownloadWorker @AssistedInject constructor(
             }
             val hiddenPending = rows.count { it.state == DownloadState.Pending.name }
             if (coordinator.reservePaused.value) return Result.success()
-            if (!storage.resolve().downloadsEnabled || cache.storageState.isFallback) {
+        if (!cache.isDownloadStorageHealthy()) {
                 coordinator.pauseUnavailable()
                 active.filter { it.state == DownloadState.Queued.name }
                     .forEach { repository.markPaused(it.trackKey, "Storage unavailable") }

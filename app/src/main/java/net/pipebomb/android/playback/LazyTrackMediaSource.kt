@@ -41,16 +41,22 @@ fun interface TrackMediaResolver {
 @OptIn(UnstableApi::class)
 class LazyTrackMediaSourceFactory(
     private val resolver: TrackMediaResolver,
-    private val childFactory: MediaSource.Factory,
+    private val streamFactory: MediaSource.Factory,
+    private val downloadFactory: MediaSource.Factory,
+    private val bypassFactory: MediaSource.Factory,
     private val scope: CoroutineScope,
 ) : MediaSource.Factory {
     constructor(
         resolver: PlaybackResolver,
-        childFactory: MediaSource.Factory,
+        streamFactory: MediaSource.Factory,
+        downloadFactory: MediaSource.Factory,
+        bypassFactory: MediaSource.Factory,
         scope: CoroutineScope,
     ) : this(
         resolver = TrackMediaResolver { key -> resolver.resolve(key) },
-        childFactory = childFactory,
+        streamFactory = streamFactory,
+        downloadFactory = downloadFactory,
+        bypassFactory = bypassFactory,
         scope = scope,
     )
 
@@ -68,13 +74,15 @@ class LazyTrackMediaSourceFactory(
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         val syntheticKey = mediaItem.localConfiguration?.uri?.let(TrackMediaUri::parse)
         return if (syntheticKey == null) {
-            childFactory.createMediaSource(mediaItem)
+            streamFactory.createMediaSource(mediaItem)
         } else {
             LazyTrackMediaSource(
                 mediaItem = mediaItem,
                 key = syntheticKey,
                 resolver = resolver,
-                childFactory = childFactory,
+                streamFactory = streamFactory,
+                downloadFactory = downloadFactory,
+                bypassFactory = bypassFactory,
                 scope = scope,
             )
         }
@@ -86,7 +94,9 @@ private class LazyTrackMediaSource(
     private val mediaItem: MediaItem,
     private val key: TrackKey,
     private val resolver: TrackMediaResolver,
-    private val childFactory: MediaSource.Factory,
+    private val streamFactory: MediaSource.Factory,
+    private val downloadFactory: MediaSource.Factory,
+    private val bypassFactory: MediaSource.Factory,
     private val scope: CoroutineScope,
 ) : CompositeMediaSource<String>() {
     private var handler: Handler? = null
@@ -133,7 +143,12 @@ private class LazyTrackMediaSource(
                             ),
                         )
                         val resolvedItem = TrackMediaItemFactory.withResolvedSource(mediaItem, result.value)
-                        val source = childFactory.createMediaSource(resolvedItem)
+                        val factory = when {
+                            result.value.bypassCache -> bypassFactory
+                            result.value.fromDownload -> downloadFactory
+                            else -> streamFactory
+                        }
+                        val source = factory.createMediaSource(resolvedItem)
                         childSource = source
                         prepareChildSource(key.toString(), source)
                     }

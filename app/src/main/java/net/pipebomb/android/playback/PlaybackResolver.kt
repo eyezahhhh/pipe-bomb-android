@@ -2,7 +2,9 @@ package net.pipebomb.android.playback
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import net.pipebomb.android.core.logging.AppLog
 import net.pipebomb.android.core.logging.LogCategory
 import net.pipebomb.android.core.logging.LogRedaction
@@ -11,11 +13,11 @@ import net.pipebomb.android.core.net.ApiClientFactory
 import net.pipebomb.android.core.net.ApiError
 import net.pipebomb.android.core.net.ApiResult
 import net.pipebomb.android.core.net.ServerUrlProvider
+import net.pipebomb.android.core.net.ConnectivityStatus
 import net.pipebomb.android.core.net.apiCall
 import net.pipebomb.android.core.net.kindLabel
 import net.pipebomb.android.core.net.rewriteServerUrl
 import net.pipebomb.android.data.download.DownloadRepository
-import net.pipebomb.android.data.storage.StorageLocationRepository
 import net.pipebomb.android.di.ApplicationScope
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -28,6 +30,7 @@ data class ResolvedMedia(
     val resolvedAt: Long,
     val sessionId: String,
     val fromDownload: Boolean = false,
+    val bypassCache: Boolean = false,
     val downloadTitle: String? = null,
     val downloadArtist: String? = null,
     val downloadArtworkUrl: String? = null,
@@ -41,7 +44,8 @@ class PlaybackResolver @Inject constructor(
     private val serverUrlProvider: ServerUrlProvider,
     private val sessionKeyRegistry: MediaSessionKeyRegistry,
     private val downloadRepository: DownloadRepository,
-    private val storage: StorageLocationRepository,
+    private val cache: PlaybackCache,
+    private val connectivity: ConnectivityStatus,
     @param:ApplicationScope private val scope: CoroutineScope,
 ) {
     private val sessions = ConcurrentHashMap<String, ResolvedMedia>()
@@ -49,17 +53,11 @@ class PlaybackResolver @Inject constructor(
 
     suspend fun resolve(key: TrackKey, forceRefresh: Boolean = false): ApiResult<ResolvedMedia> {
         val startedNs = System.nanoTime()
-        downloadRepository.completed(key)?.let { download ->
-            if (!storage.resolve().downloadsEnabled) {
-                AppLog.warn(
-                    category = LogCategory.PLAYBACK,
-                    event = "playback.resolve.download_unavailable",
-                    fields = mapOf("track" to key.toString()),
-                )
-                return ApiResult.Failure(
-                    ApiError.Local("Downloaded audio is on unavailable storage. Reconnect it or change the storage location."),
-                )
-            }
+        val cacheHealthy = withContext(Dispatchers.IO) {
+            runCatching { cache.isDownloadStorageHealthy() }.getOrDefault(false)
+        }
+        val download = downloadRepository.completed(key)
+        if (download != null && cacheHealthy) {
             sessionKeyRegistry.register(download.sessionId, key)
             AppLog.info(
                 category = LogCategory.PLAYBACK,
@@ -86,9 +84,26 @@ class PlaybackResolver @Inject constructor(
                 ),
             )
         }
+        if (download != null) {
+            AppLog.warn(
+                category = LogCategory.PLAYBACK,
+                event = "playback.resolve.download_unavailable",
+                fields = mapOf(
+                    "track" to key.toString(),
+                    "online" to connectivity.isOnline.value,
+                ),
+            )
+            if (!connectivity.isOnline.value) {
+                return ApiResult.Failure(
+                    ApiError.Local(
+                        "Downloaded audio is on unavailable storage. Reconnect the storage and restart Pipe Bomb.",
+                    ),
+                )
+            }
+        }
 
         val id = key.toString()
-        if (!forceRefresh) {
+        if (!forceRefresh && cacheHealthy) {
             sessions[id]?.takeIf { isFresh(it) }?.let { cached ->
                 AppLog.debug(
                     category = LogCategory.PLAYBACK,
@@ -99,6 +114,7 @@ class PlaybackResolver @Inject constructor(
                         "mediaType" to cached.type.name.lowercase(),
                         "sessionHash" to LogRedaction.sessionId(cached.sessionId),
                         "cacheHit" to true,
+                        "bypassCache" to cached.bypassCache,
                         "durMs" to elapsedMs(startedNs),
                     ),
                 )
@@ -107,8 +123,9 @@ class PlaybackResolver @Inject constructor(
         } else {
             sessions.remove(id)
         }
-        val request = inFlight.computeIfAbsent(id) {
-            scope.async { createSession(key) }
+        val requestKey = id
+        val request = inFlight.computeIfAbsent(requestKey) {
+            scope.async { createSession(key, bypassCache = false) }
         }
         return try {
             val result = request.await()
@@ -123,6 +140,7 @@ class PlaybackResolver @Inject constructor(
                         "mediaType" to result.value.type.name.lowercase(),
                         "sessionHash" to LogRedaction.sessionId(result.value.sessionId),
                         "cacheHit" to false,
+                        "bypassCache" to result.value.bypassCache,
                         "durMs" to elapsedMs(startedNs),
                     ),
                 )
@@ -135,13 +153,14 @@ class PlaybackResolver @Inject constructor(
                         "track" to key.toString(),
                         "kind" to result.error.kindLabel(),
                         "forceRefresh" to forceRefresh,
+                        "bypassCache" to !cacheHealthy,
                         "durMs" to elapsedMs(startedNs),
                     ),
                 )
             }
             result
         } finally {
-            inFlight.remove(id, request)
+            inFlight.remove(requestKey, request)
         }
     }
 
@@ -166,7 +185,10 @@ class PlaybackResolver @Inject constructor(
 
     fun noServer(): ApiError = ApiError.Network("No server configured")
 
-    private suspend fun createSession(key: TrackKey): ApiResult<ResolvedMedia> {
+    private suspend fun createSession(
+        key: TrackKey,
+        bypassCache: Boolean,
+    ): ApiResult<ResolvedMedia> {
         val result = apiCall("audio.session") {
             apiClientFactory.requireApi().createAudioSession(
                 key.pluginId,
@@ -196,6 +218,7 @@ class PlaybackResolver @Inject constructor(
                         type = type,
                         resolvedAt = System.currentTimeMillis(),
                         sessionId = session.id,
+                        bypassCache = bypassCache,
                     ),
                 )
             }

@@ -75,9 +75,9 @@ fun SettingsScreen(
         }
         Section("Storage") {
             InfoRow("Location", state.storageLabel)
-            if (!state.storageAvailable) {
+            if (!state.storageAvailable || state.storageIssue != null) {
                 Text(
-                    text = if (state.restartRequired) {
+                    text = state.storageIssue ?: if (state.restartRequired) {
                         "Selected storage is available. Restart Pipe Bomb to use it."
                     } else {
                         "Selected storage is unavailable. Reconnect it or choose another location."

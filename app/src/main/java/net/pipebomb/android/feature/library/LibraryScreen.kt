@@ -65,6 +65,8 @@ fun LibraryScreen(
     onOpenPlaylist: (String) -> Unit,
     downloads: List<DownloadItem>,
     storageAvailable: Boolean,
+    storageIssue: String?,
+    isLoading: Boolean,
     reservePaused: Boolean,
     mobileDataPaused: Boolean,
     onRetryDownload: (DownloadItem) -> Unit,
@@ -183,6 +185,8 @@ fun LibraryScreen(
                 downloads = downloads,
                 collections = collections,
                 storageAvailable = storageAvailable,
+                storageIssue = storageIssue,
+                isLoading = isLoading,
                 reservePaused = reservePaused,
                 mobileDataPaused = mobileDataPaused,
                 isOnline = isOnline,
@@ -204,6 +208,8 @@ private fun DownloadsTab(
     downloads: List<DownloadItem>,
     collections: List<DownloadCollectionItem>,
     storageAvailable: Boolean,
+    storageIssue: String?,
+    isLoading: Boolean,
     reservePaused: Boolean,
     mobileDataPaused: Boolean,
     isOnline: Boolean,
@@ -220,9 +226,10 @@ private fun DownloadsTab(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(PipeBombTheme.spacing.sm),
     ) {
-        if (!storageAvailable) {
+        if (storageIssue != null || !storageAvailable) {
             Text(
-                text = "Download storage is unavailable. Reconnect it in Settings.",
+                text = storageIssue
+                    ?: "Download storage is unavailable. Reconnect it in Settings.",
                 style = PipeBombTheme.typography.metadata,
                 color = PipeBombTheme.colors.error,
                 modifier = Modifier.padding(horizontal = PipeBombTheme.spacing.xs),
@@ -254,7 +261,11 @@ private fun DownloadsTab(
                 modifier = Modifier.padding(horizontal = PipeBombTheme.spacing.xs),
             )
         }
-        if (collections.isEmpty() && downloads.isEmpty()) {
+        if (isLoading && collections.isEmpty() && downloads.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                PipeBombSpinner()
+            }
+        } else if (collections.isEmpty() && downloads.isEmpty()) {
             EmptyBox("No downloads yet")
         } else {
             LazyColumn(

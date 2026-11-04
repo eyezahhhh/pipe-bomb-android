@@ -76,6 +76,7 @@ import net.pipebomb.android.feature.settings.SettingsScreen
 import net.pipebomb.android.feature.search.SearchScreen
 import net.pipebomb.android.ui.components.LocalDownloadedTrackKeys
 import net.pipebomb.android.ui.components.OfflineBanner
+import net.pipebomb.android.ui.components.StorageIssueBanner
 import net.pipebomb.android.ui.components.PipeBombSnackbarHost
 import net.pipebomb.android.ui.components.TrackContextSheet
 import net.pipebomb.android.ui.playback.PlayerHost
@@ -193,6 +194,12 @@ fun MainNavigation() {
                         onBack = { back() },
                     )
                     if (!isOnline) OfflineBanner(onOpenDownloads = ::openDownloads)
+                    downloadState.storageIssue?.let { issue ->
+                        StorageIssueBanner(
+                            message = issue,
+                            onRestart = downloadHost::restartApp,
+                        )
+                    }
                 }
             },
             bottomBar = {
@@ -336,6 +343,8 @@ fun MainNavigation() {
                         downloads = downloadState.downloads,
                         collections = downloadState.collections,
                         storageAvailable = downloadState.storageAvailable,
+                        storageIssue = downloadState.storageIssue,
+                        isLoading = downloadState.isLoading,
                         reservePaused = downloadState.reservePaused,
                         mobileDataPaused = downloadState.mobileDataPaused,
                         isOnline = isOnline,
