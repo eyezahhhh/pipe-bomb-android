@@ -45,6 +45,15 @@ if (releaseTaskRequested) {
     }
 }
 
+val debugKeystoreFile = sequenceOf(
+    System.getenv("ANDROID_DEBUG_KEYSTORE")?.takeIf { it.isNotBlank() }?.let(::File),
+    File(System.getProperty("user.home"), ".config/pipebomb-android/debug.keystore"),
+    File(System.getProperty("user.home"), ".android/debug.keystore"),
+).filterNotNull().firstOrNull { it.isFile }
+val debugStorePassword = System.getenv("ANDROID_DEBUG_KEYSTORE_PASSWORD") ?: "android"
+val debugKeyAlias = System.getenv("ANDROID_DEBUG_KEY_ALIAS") ?: "androiddebugkey"
+val debugKeyPassword = System.getenv("ANDROID_DEBUG_KEY_PASSWORD") ?: "android"
+
 val appVersionCode = providers.gradleProperty("versionCode").orNull
     ?.toIntOrNull()
     ?: 1009
@@ -64,6 +73,14 @@ android {
     }
 
     signingConfigs {
+        if (debugKeystoreFile != null) {
+            getByName("debug") {
+                storeFile = debugKeystoreFile
+                storePassword = debugStorePassword
+                keyAlias = debugKeyAlias
+                keyPassword = debugKeyPassword
+            }
+        }
         if (releaseSigningConfigured) {
             create("release") {
                 storeFile = releaseStoreFile
