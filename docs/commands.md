@@ -28,6 +28,21 @@ Read when: building, testing, installing, or setting up the Android project.
 
 The debug APK is at `app/build/outputs/apk/debug/app-debug.apk`.
 
+## Local install signatures
+
+Debug builds use the machine-local `~/.android/debug.keystore` (or the keystore under
+`ANDROID_USER_HOME`). If that file is lost, recreated, or the build runs under a
+different home directory, the new APK is signed with a different debug key and
+`adb install -r` fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Restore a backup of
+the original debug keystore to keep app data, or uninstall (this clears app data):
+
+```bash
+adb uninstall net.pipebomb.android
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Release builds use the stable release key; see `releasing.md`.
+
 ## Local server testing
 
 The dev server runs on port 3000. From the emulator, use `http://10.0.2.2:3000`;
