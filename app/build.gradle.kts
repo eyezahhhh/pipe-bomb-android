@@ -56,10 +56,10 @@ val debugKeyPassword = System.getenv("ANDROID_DEBUG_KEY_PASSWORD") ?: "android"
 
 val appVersionCode = providers.gradleProperty("versionCode").orNull
     ?.toIntOrNull()
-    ?: 1009
+    ?: 1010
 val appVersionName = providers.gradleProperty("versionName").orNull
     ?.takeIf { it.isNotBlank() }
-    ?: "0.2.7"
+    ?: "0.2.8"
 
 android {
     namespace = "net.pipebomb.android"

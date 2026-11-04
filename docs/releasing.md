@@ -47,7 +47,7 @@ Never print, commit, or upload the keystore outside the release workflow.
 
 ## Versioning
 
-- Debug/local defaults: `versionCode = 1009`, `versionName = 0.2.7`.
+- Debug/local defaults: `versionCode = 1010`, `versionName = 0.2.8`.
 - Signed CI releases use `1000 + GitHub run number` for a monotonic `versionCode` and
   the tag without the leading `v` for `versionName`.
 - Override locally with `-PversionCode=...` and `-PversionName=...`.
@@ -64,6 +64,12 @@ The signed APK is `app/build/outputs/apk/release/app-release.apk`. Verify it:
 $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs \
   app/build/outputs/apk/release/app-release.apk
 ```
+
+## Release notes
+
+Add `docs/releases/<tag>.md` before tagging. The release workflow uses that file for
+the GitHub release body and falls back to generated notes when it is absent. Notes
+should cover every change since the previous release.
 
 ## Publish
 
